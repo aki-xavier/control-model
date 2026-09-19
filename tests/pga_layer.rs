@@ -70,7 +70,7 @@ fn pga_pose_error_metric() {
 
 /// The geometric pose error is NOT the law's pose error in any frame, and this pins why so it cannot
 /// be read as a bug to fix: B_e = -2 log(M_d ~M) in the law's six slots stopped the arm ~0.78 m from
-/// its target (GA_PID_AUDIT.md #3). The ROTATION half is a frame question and nothing more; the
+/// its target. The ROTATION half is a frame question and nothing more; the
 /// TRANSLATION half is a MOMENT about the reference point (M = T(p) R factors the motor at the world
 /// origin), so no frame readout turns one into the other. The swap was deleted rather than fixed.
 #[test]
@@ -194,8 +194,8 @@ fn motor_log_error_and_bivector_norm_agree_with_the_pose_error() {
     assert!(k.bivector_norm(via_ns) > 1e-3);
 }
 
-/// The third kinematics agrees with the chain (the half of GA_PID_AUDIT.md #12 that had no machine
-/// check): PgaFk::motor is not a spare copy — the estimator's motion model runs on the motor chain
+/// The third kinematics agrees with the chain, which had no machine check until this one:
+/// PgaFk::motor is not a spare copy — the estimator's motion model runs on the motor chain
 /// while the control loop runs on UrdfChain::fk, so a divergence would drift the estimate with no
 /// other symptom. The motor's chain ends at the TERMINAL link frame, not at a joint.
 #[test]

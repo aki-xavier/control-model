@@ -13,7 +13,7 @@ fn pga_dyn_test_model() -> PgaDynamicsModel {
     PgaDynamicsModel::new(chain)
 }
 
-/// The module's central geometric claim, as a machine check (GA_PID_AUDIT.md #12): sandwiching the
+/// The module's central geometric claim, as a machine check: sandwiching the
 /// COM-frame angular momentum bivector by the link's rotor must read back as `R * (Ic * omega_b)`.
 #[test]
 fn the_world_inertia_map_is_the_pga_conjugation_of_the_com_tensor() {
