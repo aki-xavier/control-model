@@ -4,9 +4,9 @@
 // allowed only at the end (they fold into the terminal tip offset); one mid-chain is rejected.
 //
 // This file was a module of the simu crate and moved to control-model with the rest of the model
-// layer. Two things that were written here did NOT travel, because they name an INSTANCE rather than
-// the model: `urdf_path()` (which reads simu's own `models/z1/`) and `home_q()` (that arm's task
-// start). simu keeps both in its `urdf` facade over this module.
+// layer, `models/` included. It also took back the two instance items it used to leave behind —
+// `urdf_path()` (now resolved through this crate's own `models/z1/`) and `home_q()` (the Z1's task
+// start) — so a consumer names them here rather than through a facade of its own.
 
 use crate::xml::parse_document;
 use crate::xml::XmlNode;
@@ -307,6 +307,24 @@ pub fn rpy_to_r(rpy: &Vec3) -> Mat {
     rz.set(1, 1, y.cos());
     rz.set(2, 2, 1.0);
     rz.mul(&ry).mul(&rx)
+}
+
+/// urdf_path is the Z1 arm's URDF, resolved through this crate's own `models/z1/` directory (the
+/// model data moved here with the model layer).
+pub fn urdf_path() -> String {
+    crate::models::z1_urdf().to_string_lossy().to_string()
+}
+
+/// home_q is the task start configuration (deg2rad of [20 70 -85 35 0 17]).
+pub fn home_q() -> Vec<f64> {
+    vec![
+        0.3490658503988659,
+        1.2217304763960306,
+        -1.4835298641951802,
+        0.6108652381980153,
+        0.0,
+        0.29670597283903605,
+    ]
 }
 
 impl UrdfChain {

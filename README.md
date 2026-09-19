@@ -4,12 +4,13 @@ A project of its own: `simu` (its consumer) depends on it as a sibling path
 dependency, so no machine description lives in `simu`'s tree and this crate can be
 built, tested and released alone. MIT-licensed (see `LICENSE`).
 
-Eleven modules, no plant, no engine, no control law:
+Twelve modules, no plant, no engine, no control law:
 
 ```text
 readers      xml         XmlNode + parse_document, the reader for URDF and MJCF
              urdf        the fixed serial chain: ChainJoint/ChainLink/UrdfChain,
-                         load_urdf_chain, rpy_to_r, fk / tip_pose / Jacobians
+                         load_urdf_chain, rpy_to_r, fk / tip_pose / Jacobians,
+                         and the Z1 instance's urdf_path() / home_q()
              mjcf_model  the converted MJCF product: MjcfModel (URDF text +
                          sidecar: joint extras, sites, keyframes)
              mjcf_convert the MJCF -> URDF bridge (MjcfConverter)
@@ -21,6 +22,9 @@ kinematics   body_tree   BodyTree, the floating-root tree (the biped's shape)
 
 dynamics     pga_dynamics  the fixed-base PGA dynamics (PgaDynamicsModel)
              tree_dynamics the floating-base tree dynamics (TreeDynamicsModel)
+
+data         models      the model-data paths (models/: z1, unitree_g1, wall),
+                         resolved through this crate's own CARGO_MANIFEST_DIR
 
 format       vfmt        the pinned number/string formatting the emitted URDF,
                          the recorder's wire format and the bench JSON share
@@ -48,18 +52,25 @@ made the order obvious:
   layer, and the property [`control-math`](../control-math) and [`pga`](../pga)
   left on before it.
 
-The two items that did NOT travel are INSTANCE data rather than model data:
-`urdf_path()` (which reads `simu`'s own `models/z1/`) and `home_q()` (that arm's
-task start). They live in `simu`'s `urdf` facade over this crate. Two items that
-were `pub(crate)` became `pub` because a caller above the boundary reads them:
-`urdf::f64_attr` (simu's `sim_recorder`) and `PgaDynamicsModel`'s cached frames
-plus `frames()` (simu's `plant/c_engine`). The arithmetic is unchanged; the
-history of each file stays readable in `simu` (`git log --follow -- src/urdf.rs`).
+`models/` came along too: `urdf_path()` and `home_q()` resolve through this
+crate's own `models/z1/` now, and a consumer reaches the rest of the data through
+`models::*` (`g1_dir`, `g1_robot`, `g1_scene`, `g1_urdf`, `g1_meta`, `wall`)
+instead of re-deriving a path from its own manifest — simu no longer holds a
+`models/` of its own. Two items that were `pub(crate)` became `pub` because a
+caller above the boundary reads them: `urdf::f64_attr` (simu's `sim_recorder`)
+and `PgaDynamicsModel`'s cached frames plus `frames()` (simu's `plant/c_engine`).
+The arithmetic is unchanged; the history of each file stays readable in `simu`
+(`git log --follow -- src/urdf.rs`).
+
+simu names these modules EXPLICITLY (`control_model::urdf`, ...): it re-exports
+none of them, so a reader can see where a model type comes from.
 
 ## Tests
 
-`tests/model.rs` is this crate's own slice — the formatting contract, the XML
-reader's accept/reject, and `rpy_to_r`'s identity anchor — all pure, with no
-model file on disk. The per-module oracles that need a robot (the Z1 chain, the
-G1 tree, the dynamics identities) still live in `simu`'s `tests/` and reach these
-modules through `simu`'s re-exports; they are run by `simu`'s own `make test`.
+Seven suites, all here. `tests/model.rs` is the pure slice — the formatting
+contract, the XML reader's accept/reject, and `rpy_to_r`'s identity anchor — with
+no model file on disk. The six that need a robot moved here with the data:
+`urdf.rs`, `pga_layer.rs`, `pga_dynamics.rs`, `tree_dynamics.rs`, `mjcf.rs`,
+`body_tree.rs`. They resolve `models/` through this crate's own
+`CARGO_MANIFEST_DIR`, so they run with no engine present; `simu`'s `make test`
+invokes them by manifest path.

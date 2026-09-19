@@ -1,6 +1,6 @@
 // control-model — the model basis of the control stack, as a project of its own.
 //
-// Eleven modules, and every one of them describes the MACHINE rather than commanding it: the
+// Twelve modules, and every one of them describes the MACHINE rather than commanding it: the
 // readers (`xml`, `urdf`, `mjcf_model`, `mjcf_convert`), the two kinematic shapes (the fixed serial
 // chain and the floating-base `body_tree`), and their projective-GA kinematics and dynamics
 // (`pga_layer`, `kinematics`, `pga_fk`, `pga_dynamics`, `tree_dynamics`). `vfmt` is here because the
@@ -14,17 +14,17 @@
 // It was extracted from the simu crate's `src/` once the dependency graph made the order obvious:
 // the cluster is closed under itself (every `crate::` reference inside it points at another member),
 // its external dependencies are only the two siblings below it plus `roxmltree`, and nothing above
-// it can be reached from below. simu consumes it as a sibling path dependency
-// (`{ path = "../control-model" }`) and re-exports these modules at its own root, so simu's `urdf`,
-// `body_tree`, `pga_dynamics`, ... paths are unchanged.
-//
-// The one thing that did NOT travel is instance data: `urdf_path()` and `home_q()` name simu's own
-// `models/z1`, so they live in simu's `urdf` facade over this crate.
+// it can be reached from below. `models/` — the URDF/MJCF sources and their meshes — came along, so
+// `urdf_path()` and `home_q()` resolve through this crate's own directory and a consumer reaches the
+// rest of the data through `models::*`. simu consumes this as a sibling path dependency
+// (`{ path = "../control-model" }`) and names these modules EXPLICITLY (`control_model::urdf`, ...);
+// it re-exports none of them, so a reader sees where a model type comes from.
 
 pub mod body_tree;
 pub mod kinematics;
 pub mod mjcf_convert;
 pub mod mjcf_model;
+pub mod models;
 pub mod pga_dynamics;
 pub mod pga_fk;
 pub mod pga_layer;
