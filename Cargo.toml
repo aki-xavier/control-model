@@ -1,0 +1,21 @@
+[package]
+name = "control-model"
+description = "The model basis of the control stack: the XML/URDF/MJCF readers, the fixed chain and the floating-base tree, and their PGA kinematics and dynamics. Pure model, no plant, no engine."
+version = "0.1.0"
+edition = "2021"
+# 1.87 is `is_multiple_of`, which the pga crate's parity checks call and this crate's own numeric
+# kernels are free to; the sibling crates state the same floor.
+rust-version = "1.87"
+license = "MIT"
+
+[dependencies]
+pga = { path = "../pga" }
+control-math = { path = "../control-math" }
+roxmltree = "0.21.1"
+
+[lints.clippy]
+# The one default lint this crate does not follow, and the allowance it had as part of `simu` (whose
+# Cargo.toml carries the full rationale): the numeric kernels index parallel arrays by a MODEL count
+# — `n`, `nq`, `nv`, `nbody` — not by a slice's length, so the index is the maths the loop is
+# written in and an iterator would take the bound from the slice instead.
+needless_range_loop = "allow"
