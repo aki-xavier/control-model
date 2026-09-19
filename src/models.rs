@@ -2,7 +2,7 @@
 // reference, under `models/` beside this crate. Each path is built from this crate's own
 // CARGO_MANIFEST_DIR, so a consumer reaches the data through these functions instead of
 // re-deriving a relative path from its own manifest — the data moved here with the model layer,
-// and simu no longer holds a `models/` of its own.
+// and this is the only tree that holds a `models/` now.
 
 use std::path::PathBuf;
 

@@ -15,9 +15,9 @@
 // its external dependencies are only the two siblings below it plus `roxmltree`, and nothing above
 // it can be reached from below. `models/` — the URDF/MJCF sources and their meshes — came along, so
 // `urdf_path()` and `home_q()` resolve through this crate's own directory and a consumer reaches the
-// rest of the data through `models::*`. simu consumes this as a sibling path dependency
-// (`{ path = "../control-model" }`) and names these modules EXPLICITLY (`control_model::urdf`, ...);
-// it re-exports none of them, so a reader sees where a model type comes from.
+// rest of the data through `models::*`. The two products (`../z1-arm`, `../g1-biped`) consume this as
+// a sibling path dependency (`{ path = "../control-model" }`) and name these modules EXPLICITLY
+// (`control_model::urdf`, ...); neither re-exports them, so a reader sees where a type comes from.
 
 pub mod body_tree;
 pub mod kinematics;

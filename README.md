@@ -1,8 +1,8 @@
 # control-model — the model basis of the control stack
 
-A project of its own: `simu` (its consumer) depends on it as a sibling path
-dependency, so no machine description lives in `simu`'s tree and this crate can be
-built, tested and released alone. MIT-licensed (see `LICENSE`).
+A project of its own: `../z1-arm` and `../g1-biped` (its consumers) depend on it as
+sibling path dependencies, so no machine description lives in either tree and this
+crate can be built, tested and released alone. MIT-licensed (see `LICENSE`).
 
 Eleven modules, no plant, no engine, no control law:
 
@@ -29,8 +29,8 @@ data         models      the model-data paths (models/: z1, unitree_g1, wall),
 
 It depends on the two siblings below it — [`pga`](../pga) and
 [`control-math`](../control-math) — and on `roxmltree` for the XML parse. It does
-NOT depend on the C ABI shim, and has no `build.rs`: unlike `simu` (whose build
-links `libeng_shim.dylib` for every target, the mathematical tests included),
+NOT depend on the C ABI shim, and has no `build.rs`: unlike the two products (whose
+builds link `libeng_shim.dylib` for every target, the mathematical tests included),
 this crate builds and tests with no engine present.
 
 ## Provenance
@@ -52,15 +52,15 @@ made the order obvious:
 `models/` came along too: `urdf_path()` and `home_q()` resolve through this
 crate's own `models/z1/` now, and a consumer reaches the rest of the data through
 `models::*` (`g1_dir`, `g1_robot`, `g1_scene`, `g1_urdf`, `g1_meta`, `wall`)
-instead of re-deriving a path from its own manifest — simu no longer holds a
-`models/` of its own. Two items that were `pub(crate)` became `pub` because a
-caller above the boundary reads them: `urdf::f64_attr` (simu's `sim_recorder`)
-and `PgaDynamicsModel`'s cached frames plus `frames()` (simu's `plant/c_engine`).
+instead of re-deriving a path from its own manifest — this is the only tree with a
+`models/` in it. Two items that were `pub(crate)` became `pub` because a caller above
+the boundary reads them: `urdf::f64_attr` (the arm's `sim_recorder`) and
+`PgaDynamicsModel`'s cached frames plus `frames()` (the arm's `plant/c_engine`).
 The arithmetic is unchanged; the history of each file stays readable in `simu`
 (`git log --follow -- src/urdf.rs`).
 
-simu names these modules EXPLICITLY (`control_model::urdf`, ...): it re-exports
-none of them, so a reader can see where a model type comes from.
+the products name these modules EXPLICITLY (`control_model::urdf`, ...): neither
+re-exports them, so a reader can see where a model type comes from.
 
 ## Tests
 
@@ -70,5 +70,5 @@ accept/reject and `rpy_to_r`'s identity anchor — with no model file on disk.
 compares VALUES rather than text.) The six that need a robot moved here with the data:
 `urdf.rs`, `pga_layer.rs`, `pga_dynamics.rs`, `tree_dynamics.rs`, `mjcf.rs`,
 `body_tree.rs`. They resolve `models/` through this crate's own
-`CARGO_MANIFEST_DIR`, so they run with no engine present; `simu`'s `make test`
+`CARGO_MANIFEST_DIR`, so they run with no engine present; `z1-arm`'s `make test`
 invokes them by manifest path.

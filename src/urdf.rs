@@ -278,7 +278,7 @@ fn parse_vec3(s: &str) -> Vec3 {
 }
 
 /// f64_attr parses a float attribute: a value it cannot read is 0.0, not an error. Public because
-/// simu's own `sim_recorder` reads scene attributes with it across the crate boundary.
+/// the arm's own `sim_recorder` reads scene attributes with it across the crate boundary.
 pub fn f64_attr(s: &str) -> f64 {
     s.trim().parse::<f64>().unwrap_or(0.0)
 }

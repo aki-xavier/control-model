@@ -1,4 +1,4 @@
-// pga_layer.rs — the conversion layer between the simu types and the projective GA crate:
+// pga_layer.rs — the conversion layer between this layer's types and the projective GA crate:
 // screw embed/readout, quaternion/matrix -> rotor, and the coordinate-free pose-error screw.
 // Holds no types (urdf.rs, kinematics.rs, pga_fk.rs and pga_dynamics.rs carry the users).
 //
