@@ -3,6 +3,8 @@
 
 use control_math::quat::Quat;
 use control_math::vec3::Vec3;
+use serde::Serialize;
+use std::collections::BTreeMap;
 
 /// MjcfSite is a named MJCF <site>: a task point welded to a body (the G1's left_foot/right_foot soles, an imu frame, a mouth tip); sites are not URDF concepts, so they ride the sidecar.
 #[derive(Clone, Debug, Default)]
@@ -35,65 +37,76 @@ pub struct MjcfModel {
     pub kf_qpos: Vec<Vec<f64>>,
 }
 
-/// vnum renders an f64 through Rust's own `Display` (the shortest round-trip form). The sidecar is a
-/// committed artifact, but it is gated on its DECODED values rather than its bytes (tests/mjcf.rs),
-/// so no form is pinned here: whatever shortest form `Display` spells, it reads back the same double.
-fn vnum(x: f64) -> String {
-    x.to_string()
+/// The sidecar's wire shape: three tables, each row a struct so its FIELD ORDER is the declaration
+/// order (serde keeps it and no ordered map is needed); the one dynamic-key table is a BTreeMap,
+/// whose keys come out sorted — the gate compares decoded values key by key, so that order is free.
+#[derive(Serialize)]
+struct MetaOut<'a> {
+    joints: Vec<JointRow<'a>>,
+    sites: Vec<SiteRow<'a>>,
+    keyframes: BTreeMap<&'a str, &'a Vec<f64>>,
+}
+
+#[derive(Serialize)]
+struct JointRow<'a> {
+    name: &'a str,
+    damping: f64,
+    friction: f64,
+    armature: f64,
+    effort_lo: f64,
+    effort_hi: f64,
+}
+
+#[derive(Serialize)]
+struct SiteRow<'a> {
+    name: &'a str,
+    body: &'a str,
+    pos: [f64; 3],
+    quat: [f64; 4],
 }
 
 impl MjcfModel {
-    /// meta_json renders the sidecar (joints, sites, keyframes) as JSON for the committed meta artifact; the URDF text travels as its own file.
+    /// meta_json renders the sidecar (joints, sites, keyframes) as JSON for the committed meta
+    /// artifact; the URDF text travels as its own file. `serde_json` owns the encoding now: the
+    /// numbers are ryu's shortest round-trip form, and the artifact is gated on its DECODED values
+    /// (tests/mjcf.rs), so no text form is pinned.
     pub fn meta_json(&self) -> String {
-        let mut sb = String::with_capacity(1024);
-        sb.push_str("{\n\"joints\": [\n");
-        for (i, j) in self.joints.iter().enumerate() {
-            let sep = if i + 1 < self.joints.len() { "," } else { "" };
-            sb.push_str(&format!(
-                "\t{{\"name\": \"{}\", \"damping\": {}, \"friction\": {}, \"armature\": {}, \"effort_lo\": {}, \"effort_hi\": {}}}{}\n",
-                j.name,
-                vnum(j.damping),
-                vnum(j.friction),
-                vnum(j.armature),
-                vnum(j.effort_lo),
-                vnum(j.effort_hi),
-                sep
-            ));
-        }
-        sb.push_str("],\n\"sites\": [\n");
-        for (i, s) in self.sites.iter().enumerate() {
-            let sep = if i + 1 < self.sites.len() { "," } else { "" };
-            sb.push_str(&format!(
-                "\t{{\"name\": \"{}\", \"body\": \"{}\", \"pos\": [{}, {}, {}], \"quat\": [{}, {}, {}, {}]}}{}\n",
-                s.name,
-                s.body,
-                vnum(s.pos.x),
-                vnum(s.pos.y),
-                vnum(s.pos.z),
-                vnum(s.quat.w),
-                vnum(s.quat.x),
-                vnum(s.quat.y),
-                vnum(s.quat.z),
-                sep
-            ));
-        }
-        sb.push_str("],\n\"keyframes\": {\n");
-        for (idx, name) in self.kf_names.iter().enumerate() {
-            let q = &self.kf_qpos[idx];
-            let sep = if idx + 1 < self.kf_names.len() {
-                ","
-            } else {
-                ""
-            };
-            sb.push_str(&format!("\t\"{name}\": ["));
-            for (i, v) in q.iter().enumerate() {
-                let sep2 = if i + 1 < q.len() { ", " } else { "" };
-                sb.push_str(&format!("{}{sep2}", vnum(*v)));
-            }
-            sb.push_str(&format!("]{sep}\n"));
-        }
-        sb.push_str("}\n}\n");
-        sb
+        let joints = self
+            .joints
+            .iter()
+            .map(|j| JointRow {
+                name: &j.name,
+                damping: j.damping,
+                friction: j.friction,
+                armature: j.armature,
+                effort_lo: j.effort_lo,
+                effort_hi: j.effort_hi,
+            })
+            .collect();
+        let sites = self
+            .sites
+            .iter()
+            .map(|s| SiteRow {
+                name: &s.name,
+                body: &s.body,
+                pos: [s.pos.x, s.pos.y, s.pos.z],
+                quat: [s.quat.w, s.quat.x, s.quat.y, s.quat.z],
+            })
+            .collect();
+        let keyframes: BTreeMap<&str, &Vec<f64>> = self
+            .kf_names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.as_str(), &self.kf_qpos[i]))
+            .collect();
+        let out = MetaOut {
+            joints,
+            sites,
+            keyframes,
+        };
+        let mut s = serde_json::to_string_pretty(&out).expect("the sidecar serializes");
+        s.push('\n');
+        s
     }
 
     /// kf_index finds a keyframe by name (None for an absent name; the callers all guard).

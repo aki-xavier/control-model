@@ -12,12 +12,12 @@ license = "MIT"
 pga = { path = "../pga" }
 control-math = { path = "../control-math" }
 roxmltree = "0.21.1"
-
-[dev-dependencies]
-# The sidecar gate (tests/mjcf.rs) decodes the emitted JSON and compares VALUES rather than pinned
-# text, so the crate needs a reader — in its tests, and only there. `float_roundtrip` is REQUIRED:
-# serde_json's default f64 parsing is not correctly rounded, so a value one ULP off parses equal
-# (measured here: `120.00000000000001` read back as `120.0`) and the gate would be blind to it.
+# The sidecar is JSON, so the encoder is `serde_json`: one tested writer instead of the hand-rolled
+# one this crate used to carry. `float_roundtrip` is REQUIRED on the READER side — the gates decode
+# both documents and compare values (tests/mjcf.rs), and serde_json's default f64 parsing is not
+# correctly rounded, so a value one ULP off parses equal (measured here: `120.00000000000001` read
+# back as `120.0`) and the gate would be blind to the last-bit difference it exists to catch.
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [lints.clippy]

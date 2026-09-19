@@ -61,7 +61,9 @@ fn json_same(a: &serde_json::Value, b: &serde_json::Value) -> bool {
             x.len() == y.len() && x.iter().zip(y).all(|(a, b)| json_same(a, b))
         }
         (Value::Object(x), Value::Object(y)) => {
-            x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| json_same(v, w)))
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| json_same(v, w)))
         }
         _ => a == b,
     }
