@@ -13,6 +13,13 @@ pga = { path = "../pga" }
 control-math = { path = "../control-math" }
 roxmltree = "0.21.1"
 
+[dev-dependencies]
+# The sidecar gate (tests/mjcf.rs) decodes the emitted JSON and compares VALUES rather than pinned
+# text, so the crate needs a reader — in its tests, and only there. `float_roundtrip` is REQUIRED:
+# serde_json's default f64 parsing is not correctly rounded, so a value one ULP off parses equal
+# (measured here: `120.00000000000001` read back as `120.0`) and the gate would be blind to it.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
 [lints.clippy]
 # The one default lint this crate does not follow, and the allowance it had as part of `simu` (whose
 # Cargo.toml carries the full rationale): the numeric kernels index parallel arrays by a MODEL count

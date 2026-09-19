@@ -1,10 +1,9 @@
 // control-model — the model basis of the control stack, as a project of its own.
 //
-// Twelve modules, and every one of them describes the MACHINE rather than commanding it: the
+// Eleven modules, and every one of them describes the MACHINE rather than commanding it: the
 // readers (`xml`, `urdf`, `mjcf_model`, `mjcf_convert`), the two kinematic shapes (the fixed serial
 // chain and the floating-base `body_tree`), and their projective-GA kinematics and dynamics
-// (`pga_layer`, `kinematics`, `pga_fk`, `pga_dynamics`, `tree_dynamics`). `vfmt` is here because the
-// URDF/MJCF this crate emits is a committed artifact whose bytes are a contract.
+// (`pga_layer`, `kinematics`, `pga_fk`, `pga_dynamics`, `tree_dynamics`).
 //
 // It carries no plant, no engine and no control law: every consumer in the stack — the observers,
 // the task loops, the legged stack, the benches — sits above it and reaches the machine through
@@ -30,5 +29,4 @@ pub mod pga_fk;
 pub mod pga_layer;
 pub mod tree_dynamics;
 pub mod urdf;
-pub mod vfmt;
 pub mod xml;

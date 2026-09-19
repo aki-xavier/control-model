@@ -4,7 +4,7 @@ A project of its own: `simu` (its consumer) depends on it as a sibling path
 dependency, so no machine description lives in `simu`'s tree and this crate can be
 built, tested and released alone. MIT-licensed (see `LICENSE`).
 
-Twelve modules, no plant, no engine, no control law:
+Eleven modules, no plant, no engine, no control law:
 
 ```text
 readers      xml         XmlNode + parse_document, the reader for URDF and MJCF
@@ -25,9 +25,6 @@ dynamics     pga_dynamics  the fixed-base PGA dynamics (PgaDynamicsModel)
 
 data         models      the model-data paths (models/: z1, unitree_g1, wall),
                          resolved through this crate's own CARGO_MANIFEST_DIR
-
-format       vfmt        the pinned number/string formatting the emitted URDF,
-                         the recorder's wire format and the bench JSON share
 ```
 
 It depends on the two siblings below it — [`pga`](../pga) and
@@ -67,9 +64,10 @@ none of them, so a reader can see where a model type comes from.
 
 ## Tests
 
-Seven suites, all here. `tests/model.rs` is the pure slice — the formatting
-contract, the XML reader's accept/reject, and `rpy_to_r`'s identity anchor — with
-no model file on disk. The six that need a robot moved here with the data:
+Seven suites, all here. `tests/model.rs` is the pure slice — the XML reader's
+accept/reject and `rpy_to_r`'s identity anchor — with no model file on disk.
+(`serde_json` is a dev-dependency: the sidecar gate decodes the emitted JSON and
+compares VALUES rather than text.) The six that need a robot moved here with the data:
 `urdf.rs`, `pga_layer.rs`, `pga_dynamics.rs`, `tree_dynamics.rs`, `mjcf.rs`,
 `body_tree.rs`. They resolve `models/` through this crate's own
 `CARGO_MANIFEST_DIR`, so they run with no engine present; `simu`'s `make test`

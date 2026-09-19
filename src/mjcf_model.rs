@@ -35,9 +35,11 @@ pub struct MjcfModel {
     pub kf_qpos: Vec<Vec<f64>>,
 }
 
-/// vnum renders an f64 through `vfmt::f64_str` (shortest round-trip, `.0` kept on an integral value); the sidecar JSON is a committed artifact, so its bytes matter.
+/// vnum renders an f64 through Rust's own `Display` (the shortest round-trip form). The sidecar is a
+/// committed artifact, but it is gated on its DECODED values rather than its bytes (tests/mjcf.rs),
+/// so no form is pinned here: whatever shortest form `Display` spells, it reads back the same double.
 fn vnum(x: f64) -> String {
-    crate::vfmt::f64_str(x)
+    x.to_string()
 }
 
 impl MjcfModel {

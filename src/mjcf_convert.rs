@@ -4,7 +4,6 @@
 // LINK (the engine injects the Free world joint; a synthetic link would double the root). Serial hinge chains only.
 
 use crate::mjcf_model::{MjcfJointExtra, MjcfModel, MjcfSite};
-use crate::vfmt;
 use crate::xml::parse_document;
 use crate::xml::XmlNode;
 use control_math::mat::Mat;
@@ -48,10 +47,11 @@ impl Default for MjcfConverter {
     }
 }
 
-/// num renders f64 for the emitted XML through `vfmt::dec(x, 12)`, ELEVEN decimal places with trailing zeros kept;
-/// the emitted URDF is a committed artifact, so a formatting change would rewrite every line of it.
+/// num renders f64 for the emitted XML: ELEVEN decimal places, trailing zeros kept (`{x:.11}`). This
+/// form is the module's OWN contract — the emitted URDF is a committed artifact, so changing the
+/// precision or the rounding would rewrite every line of it. The gate is tests/mjcf.rs.
 fn num(x: f64) -> String {
-    vfmt::dec(x, 12)
+    format!("{x:.11}")
 }
 
 /// floats parses a whitespace-separated float list attribute.

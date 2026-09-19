@@ -1,7 +1,8 @@
 // mjcf.rs — the MJCF -> URDF bridge's self-consistency suite: the converted model parses back
 // through the project's own URDF pipeline, carries the model's physics, and puts the feet where the
 // upstream 'stand' keyframe says they are. No external ground truth; one gate compares the emitted
-// text byte for byte against the artifacts committed in models/.
+// URDF's text against the artifact committed in models/, and another compares the sidecar's DECODED
+// values (its rendering is Rust's `Display`, not pinned text).
 
 use control_model::mjcf_convert::MjcfConverter;
 use control_model::mjcf_model::MjcfModel;
@@ -46,14 +47,42 @@ fn chains(m: &MjcfModel) -> (UrdfChain, UrdfChain) {
     (left, right)
 }
 
+/// json_same compares two decoded documents by VALUE: numbers by their f64 value — `serde_json` keeps
+/// each literal's own representation, so a committed `88.0` and a written `88` are the same number —
+/// arrays elementwise, and objects key by key.
+fn json_same(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => match (x.as_f64(), y.as_f64()) {
+            (Some(x), Some(y)) => x == y,
+            _ => x == y,
+        },
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(a, b)| json_same(a, b))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| json_same(v, w)))
+        }
+        _ => a == b,
+    }
+}
+
+/// The sidecar's numbers, not its text: the writer renders floats through Rust's `Display`, so the
+/// gate decodes both documents and compares VALUES. A change of layout — or the loss of the old
+/// pinned form — is not a failure as long as every number reads back the same double.
 #[test]
 fn the_sidecar_matches_the_committed_meta() {
     let m = convert_model();
-    let want_meta =
+    let want_text =
         std::fs::read_to_string(g1_dir().join("unitree_g1_meta.json")).expect("committed meta");
-    if m.meta_json() != want_meta {
-        report_diff(&m.meta_json(), &want_meta, "meta");
-    }
+    let got: serde_json::Value =
+        serde_json::from_str(&m.meta_json()).expect("the emitted sidecar parses as JSON");
+    let want: serde_json::Value =
+        serde_json::from_str(&want_text).expect("the committed meta parses as JSON");
+    assert!(
+        json_same(&got, &want),
+        "the sidecar's decoded values differ from the committed meta"
+    );
 }
 
 /// Pins a known divergence: the committed unitree_g1.urdf came from an OLDER converter (one
@@ -110,27 +139,6 @@ fn strip_collisions(text: &str) -> Vec<String> {
         }
     }
     out
-}
-
-/// report_diff points at the first differing line and leaves both texts in
-/// target/ for inspection, so a failure is a diff and not a boolean.
-fn report_diff(got: &str, want: &str, what: &str) -> ! {
-    let dir = repo_root().join("target");
-    let _ = std::fs::write(dir.join(format!("{what}_rust.txt")), got);
-    let _ = std::fs::write(dir.join(format!("{what}_committed.txt")), want);
-    let g: Vec<&str> = got.lines().collect();
-    let w: Vec<&str> = want.lines().collect();
-    for i in 0..g.len().max(w.len()) {
-        let a = g.get(i).copied().unwrap_or("<the file ends here>");
-        let b = w.get(i).copied().unwrap_or("<the file ends here>");
-        if a != b {
-            panic!(
-                "{what}: first difference at line {}:\n  rust:      {a}\n  committed: {b}\n(both texts written to target/{what}_{{rust,committed}}.txt)",
-                i + 1
-            );
-        }
-    }
-    panic!("{what}: the texts differ only in trailing whitespace");
 }
 
 #[test]
