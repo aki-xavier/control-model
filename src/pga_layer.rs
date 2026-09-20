@@ -30,12 +30,9 @@ pub fn pga_biv_to_axial(b: Multivector) -> ([f64; 3], [f64; 3]) {
     ([p[2], -p[1], p[0]], [p[3], p[4], p[5]])
 }
 
-/// euc_part keeps only the scalar + Euclidean-line part, which is a motor's rotation part.
-pub(crate) fn euc_part(m: Multivector) -> Multivector {
-    let p = m.bivector_part();
-    m.grade(0)
-        .add(pga::mv_bivector(p[0], p[1], p[2], 0.0, 0.0, 0.0))
-}
+/// The scalar + Euclidean-line part, which is a motor's rotation part: the contract's own read, aliased here
+/// because the screw algebra below asks for it under this name.
+pub(crate) use control_base::plant::motor_rotation as euc_part;
 
 pub fn vec3_from_pga_vec(m: Multivector) -> Vec3 {
     let v = m.vector_part();

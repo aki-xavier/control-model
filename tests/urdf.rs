@@ -5,6 +5,7 @@
 use control_math::mat::Mat;
 use control_math::quat::Quat;
 use control_math::vec3::Vec3;
+use control_model::pga_layer::mat_from_rotor;
 use control_model::urdf::{home_q, load_urdf_chain, rpy_to_r, urdf_path};
 
 fn z1() -> control_model::urdf::UrdfChain {
@@ -67,14 +68,14 @@ fn point_jacobian_matches_finite_differences_of_fk() {
     let chain = z1();
     let q = home_q();
     let (o, r) = chain.fk(&q);
-    let (tip, _) = chain.tip_pose(&o, &r);
+    let tip = chain.tip_position(&o, &r);
     let j = chain.point_jacobian(&o, &r, tip);
     let h = 1e-7;
     for c in 0..chain.n {
         let mut qp = q.clone();
         qp[c] += h;
         let (o2, r2) = chain.fk(&qp);
-        let (tip2, _) = chain.tip_pose(&o2, &r2);
+        let tip2 = chain.tip_position(&o2, &r2);
         let num = tip2.sub(tip).scale(1.0 / h);
         for (row, nv) in [num.x, num.y, num.z].iter().enumerate() {
             let analytic = j.at(row, c);
@@ -122,7 +123,7 @@ fn full_jacobian_stacks_the_point_and_axis_blocks() {
     let chain = z1();
     let q = home_q();
     let (o, r) = chain.fk(&q);
-    let (tip, _) = chain.tip_pose(&o, &r);
+    let tip = chain.tip_position(&o, &r);
     let full = chain.full_jacobian(&o, &r, tip);
     let point = chain.point_jacobian(&o, &r, tip);
     for c in 0..chain.n {
@@ -137,16 +138,17 @@ fn full_jacobian_stacks_the_point_and_axis_blocks() {
 }
 
 #[test]
-fn tip_pose_is_the_terminal_frame_plus_the_tip_and_tool_offsets() {
+fn the_tip_readings_are_the_terminal_frame_plus_the_tip_and_tool_offsets() {
     let chain = z1();
     let (o, r) = chain.fk(&home_q());
-    let (p, q) = chain.tip_pose(&o, &r);
+    let p = chain.tip_position(&o, &r);
+    let q = chain.tip_motor(&o, &r);
     let i = o.len() - 1;
     let off = chain.tip_p.add(Vec3::new(chain.tool_reach, 0.0, 0.0));
     let want = o[i].add(r[i].mul_vec3(off));
     assert!((p.sub(want)).norm() < 1e-15, "tip position {p:?}");
     let want_r = r[i].mul(&chain.tip_r);
-    let got_r = q.to_mat3();
+    let got_r = mat_from_rotor(&q);
     for a in 0..3 {
         for b in 0..3 {
             assert!((got_r.at(a, b) - want_r.at(a, b)).abs() < 1e-15);

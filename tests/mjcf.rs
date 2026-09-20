@@ -259,8 +259,8 @@ fn stand_keyframe_puts_both_feet_at_one_height() {
     let qr = &stand[13..19];
     let (ol, rl) = left.fk(ql);
     let (or_, rr) = right.fk(qr);
-    let (ltip_p, _) = left.tip_pose(&ol, &rl);
-    let (rtip_p, _) = right.tip_pose(&or_, &rr);
+    let ltip_p = left.tip_position(&ol, &rl);
+    let rtip_p = right.tip_position(&or_, &rr);
     // the upstream 'stand' is a level stance: both chain tips (the ankle link frames) must agree in
     // height and hang one leg-length below the pelvis. The 1e-6 m gate is the vendored MJCF's own
     // precision: its 6-digit quaternions are preserved verbatim, which moves the feet by ~1e-8 m.

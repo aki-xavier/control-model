@@ -4,11 +4,13 @@
 // offset): a fixed joint mid-chain is rejected rather than folded, since folding it would silently
 // drop a joint from the q vector.
 
+use crate::pga_layer::rotor_from_mat;
 use crate::xml::parse_document;
 use crate::xml::XmlNode;
+use control_base::plant::motor_of_rotor;
 use control_math::mat::Mat;
-use control_math::quat::Quat;
 use control_math::vec3::Vec3;
+use pga::Multivector;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
@@ -345,13 +347,31 @@ impl UrdfChain {
         z.normalized()
     }
 
-    /// tip_pose: the task reference point — the terminal frame plus the tip offset and the tool
-    /// reach along the terminal local +x, orientation including the tip rotation.
-    pub fn tip_pose(&self, o: &[Vec3], r: &[Mat]) -> (Vec3, Quat) {
+    /// The task reference point's world position and its rotation MATRIX — the terminal frame plus the tip
+    /// offset and the tool reach along the terminal local +x, orientation including the tip rotation.
+    ///
+    /// Why the pair is computed once and read twice below: the quaternion reading and the rotor reading are
+    /// two spellings of one pose, and a second copy of this arithmetic is where the two would stop agreeing.
+    fn tip_frame(&self, o: &[Vec3], r: &[Mat]) -> (Vec3, Mat) {
         let i = o.len() - 1;
         let off = self.tip_p.add(Vec3::new(self.tool_reach, 0.0, 0.0));
-        let p = o[i].add(r[i].mul_vec3(off));
-        (p, Quat::from_mat3(&r[i].mul(&self.tip_r)))
+        (o[i].add(r[i].mul_vec3(off)), r[i].mul(&self.tip_r))
+    }
+
+    /// tip_position: the task reference point's world position on its own, and the reading the callers that
+    /// only want the point use. Why it is not `motor_position` on `tip_motor` below: that is a pose built and
+    /// taken apart, which is not the identity in floating point, so the point would come back moved in its
+    /// last bits for asking a smaller question.
+    pub fn tip_position(&self, o: &[Vec3], r: &[Mat]) -> Vec3 {
+        self.tip_frame(o, r).0
+    }
+
+    /// tip_motor: the same task reference point as one PGA motor, for the callers whose pose vocabulary is the
+    /// algebra's — the position and the rotation are the same two values `tip_position` and the rotation read,
+    /// not a round trip through a quaternion and back.
+    pub fn tip_motor(&self, o: &[Vec3], r: &[Mat]) -> Multivector {
+        let (p, rot) = self.tip_frame(o, r);
+        motor_of_rotor(p, rotor_from_mat(&rot))
     }
 
     /// point_jacobian: 3 x n world linear Jacobian of a world point attached to the chain, all joints active.
