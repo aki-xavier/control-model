@@ -1,6 +1,6 @@
-// urdf.rs — the chain layer's tests. The first test's numbers are the reference's, verbatim; the rest
-// are the README's claims for this layer: per-link Jacobians against finite differences of FK, the tip
-// pose against the terminal frame it is defined from, and rpy_to_r against the quaternion path.
+// urdf.rs — the chain layer's tests: per-link Jacobians against finite differences of FK, the tip pose
+// against the terminal frame it is defined from, and rpy_to_r against the quaternion path. The damping
+// fixture is the Z1 URDF's own values, verbatim.
 
 use control_math::mat::Mat;
 use control_math::quat::Quat;
@@ -129,7 +129,6 @@ fn full_jacobian_stacks_the_point_and_axis_blocks() {
         for row in 0..3 {
             assert!((full.at(row, c) - point.at(row, c)).abs() < 1e-15);
         }
-        // the angular block is the joint's own world axis
         let z = chain.world_z(&r, c);
         assert!((full.at(3, c) - z.x).abs() < 1e-15);
         assert!((full.at(4, c) - z.y).abs() < 1e-15);
@@ -146,7 +145,6 @@ fn tip_pose_is_the_terminal_frame_plus_the_tip_and_tool_offsets() {
     let off = chain.tip_p.add(Vec3::new(chain.tool_reach, 0.0, 0.0));
     let want = o[i].add(r[i].mul_vec3(off));
     assert!((p.sub(want)).norm() < 1e-15, "tip position {p:?}");
-    // orientation: R[n-1] * tip_r, read out as a quaternion
     let want_r = r[i].mul(&chain.tip_r);
     let got_r = q.to_mat3();
     for a in 0..3 {

@@ -1,8 +1,5 @@
-// pga_layer.rs — the PGA unified computation layer (kinematics + pose error):
-// rotor/quaternion conventions and the pose-error metric against the analytic
-// rotvec.
-//
-// Per-link Jacobians are finite-difference-checked in tests/urdf.rs.
+// pga_layer.rs — the PGA layer's tests: the rotor/quaternion conventions and the pose-error metric
+// against the analytic rotvec. Per-link Jacobians are checked in tests/urdf.rs.
 
 use control_math::mat::Mat;
 use control_math::quat::Quat;
@@ -18,7 +15,6 @@ fn pga_test_chain() -> control_model::urdf::UrdfChain {
 
 #[test]
 fn pga_pose_conventions() {
-    // rotor_from_quat matches a rotation matrix (x-axis 30 degrees)
     let q = Quat::from_mat3(&Mat::from_axis_angle(
         Vec3::new(1.0, 0.0, 0.0),
         std::f64::consts::PI / 6.0,
@@ -31,8 +27,7 @@ fn pga_pose_conventions() {
 
 #[test]
 fn pga_fk_tip_offset() {
-    // tip pose = terminal frame + tool reach along the terminal local +x, orientation unchanged.
-    // keepout.rs declares `TOOL_REACH` (0.051) and the chain carries its own copy of that number.
+    // the tool reach is this crate's own copy of the 0.051 m tip offset, so it is pinned here.
     let chain = pga_test_chain();
     let q = [0.4, 1.0, -1.2, 0.5, -0.3, 0.8];
     let (o, r) = chain.fk(&q);
@@ -79,8 +74,8 @@ fn the_geometric_error_is_not_the_laws_error_in_any_frame() {
     let id = Quat::IDENTITY;
     let z90 = Quat::from_mat3(&Mat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), 0.5));
     let x35 = Quat::from_mat3(&Mat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), -0.35));
-    // the readouts of one pose pair: the knob's (the motor at the world origin), the current frame's,
-    // and that one carried into the world by the current rotation
+    // three readouts of one pose pair: the motor's at the world origin, the current frame's, and that
+    // one carried into the world by the current rotation
     fn read(
         k: &Kinematics,
         pd: Vec3,
@@ -194,10 +189,10 @@ fn motor_log_error_and_bivector_norm_agree_with_the_pose_error() {
     assert!(k.bivector_norm(via_ns) > 1e-3);
 }
 
-/// The third kinematics agrees with the chain, which had no machine check until this one:
-/// PgaFk::motor is not a spare copy — the estimator's motion model runs on the motor chain
-/// while the control loop runs on UrdfChain::fk, so a divergence would drift the estimate with no
-/// other symptom. The motor's chain ends at the TERMINAL link frame, not at a joint.
+/// The third kinematics agrees with the chain, which had no machine check until this one: PgaFk::motor
+/// is not a spare copy of UrdfChain::fk but a second implementation of the same recursion, so a
+/// divergence would show up nowhere else. The motor's chain ends at the TERMINAL link frame, not at a
+/// joint.
 #[test]
 fn the_motor_chain_and_the_matrix_chain_are_the_same_kinematics() {
     let chain = pga_test_chain();
@@ -236,7 +231,7 @@ fn the_motor_chain_and_the_matrix_chain_are_the_same_kinematics() {
     assert!(
         worst_pose < 1e-12 && worst_pos < 1e-12 && worst_rot < 1e-12,
         "the motor chain and the matrix chain disagree: pose {worst_pose:.3e}, position \
-         {worst_pos:.3e} m, rotation {worst_rot:.3e} — the estimator's motion model and the \
-         controller's are no longer the same machine"
+         {worst_pos:.3e} m, rotation {worst_rot:.3e} — the two kinematics are no longer the same \
+         machine"
     );
 }

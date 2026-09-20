@@ -1,7 +1,7 @@
-// tree_dynamics.rs — the floating-base tree's self-consistency suite. The strong gates are
-// cross-checks against the verified fixed-base backend (pga_dynamics.rs): with the base at identity
-// pose and zero twist, per-branch gravity, bias and mass rows must reproduce the chain backend's
-// numbers; the ID identity ID = M alpha + C nu + g and the CoM finite-difference check are self-consistency.
+// tree_dynamics.rs — the floating-base tree's suite. The strong gates are cross-checks against the
+// fixed-base backend (pga_dynamics.rs): with the base at identity pose and zero twist, per-branch
+// gravity, bias and mass rows must reproduce the chain backend's numbers. The ID identity
+// ID = M alpha + C nu + g and the CoM finite difference are self-consistency.
 
 use control_math::mat::Mat;
 use control_math::quat::Quat;
@@ -39,7 +39,7 @@ fn rand_q(n: usize, seed: f64) -> Vec<f64> {
     q
 }
 
-/// arm_of is the joint's sidecar armature (0 when unregistered).
+/// arm_of: 0.0 when the joint is unregistered.
 fn arm_of(t: &BodyTree, name: &str) -> f64 {
     for ex in &t.extras {
         if ex.name == name {

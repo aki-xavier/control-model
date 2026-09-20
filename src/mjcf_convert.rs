@@ -1,7 +1,8 @@
-// mjcf_convert.rs — MjcfConverter, the MJCF -> URDF bridge: one parser, then everything downstream consumes the
-// emitted URDF unchanged (URDF is the source of truth); the sidecar (MjcfModel) carries what URDF cannot express.
-// Bodies nest and T(q) = T(pos,quat) * R(axis,q) with (w,x,y,z) quats; a <freejoint/> body becomes the URDF ROOT
-// LINK (the engine injects the Free world joint; a synthetic link would double the root). Serial hinge chains only.
+// mjcf_convert.rs — MjcfConverter, the MJCF -> URDF bridge. The URDF is the source of truth: one
+// parser reads it and the sidecar (MjcfModel) carries only what URDF cannot express. Bodies nest and
+// T(q) = T(pos,quat) * R(axis,q) with (w,x,y,z) quats; a <freejoint/> body becomes the URDF ROOT
+// LINK, because a synthetic link under the engine's own world joint would double the root. Serial
+// hinge chains only.
 
 use crate::mjcf_model::{MjcfJointExtra, MjcfModel, MjcfSite};
 use crate::xml::parse_document;
@@ -11,7 +12,6 @@ use control_math::quat::Quat;
 use control_math::vec3::Vec3;
 use std::collections::HashMap;
 
-/// MjcfDefaults is one flattened MJCF default class: joint dynamics plus the geom contact style plus the actuator force range.
 #[derive(Clone, Debug, Default)]
 struct MjcfDefaults {
     damping: f64,
@@ -27,7 +27,8 @@ pub struct MjcfConverter {
     meshdir: String,
     deg: bool,
     cls: HashMap<String, MjcfDefaults>,
-    // the active MJCF childclass: a body's childclass attribute is the default class for itself and all descendants
+    // the active MJCF childclass: a body's childclass attribute is the default class for itself and
+    // all descendants, so it has to be saved and restored around a recursion.
     childclass: String,
 }
 
@@ -47,14 +48,13 @@ impl Default for MjcfConverter {
     }
 }
 
-/// num renders f64 for the emitted XML: ELEVEN decimal places, trailing zeros kept (`{x:.11}`). This
-/// form is the module's OWN contract — the emitted URDF is a committed artifact, so changing the
-/// precision or the rounding would rewrite every line of it. The gate is tests/mjcf.rs.
+/// num renders f64 for the emitted XML: ELEVEN decimal places, trailing zeros kept. This form is the
+/// module's OWN contract — the emitted URDF is a committed artifact, so changing the precision or the
+/// rounding would rewrite every line of it. The gate is tests/mjcf.rs.
 fn num(x: f64) -> String {
     format!("{x:.11}")
 }
 
-/// floats parses a whitespace-separated float list attribute.
 fn floats(s: &str) -> Vec<f64> {
     let mut out = Vec::new();
     for tok in s.split([' ', '\t', '\n']) {
@@ -66,7 +66,6 @@ fn floats(s: &str) -> Vec<f64> {
     out
 }
 
-/// vec3_of parses a 3-float attribute (default 0 0 0).
 fn vec3_of(n: &XmlNode, key: &str) -> Vec3 {
     let f = floats(&n.attr_or(key, ""));
     if f.len() < 3 {
@@ -75,7 +74,7 @@ fn vec3_of(n: &XmlNode, key: &str) -> Vec3 {
     Vec3::new(f[0], f[1], f[2])
 }
 
-/// quat_of parses an MJCF quat attribute (w x y z; default identity).
+/// quat_of: an MJCF quat attribute (w x y z), identity when it is short.
 fn quat_of(n: &XmlNode, key: &str) -> Quat {
     let f = floats(&n.attr_or(key, ""));
     if f.len() < 4 {
@@ -89,7 +88,7 @@ fn quat_of(n: &XmlNode, key: &str) -> Quat {
     }
 }
 
-/// rpy_of maps a rotation matrix to URDF fixed-axis RPY (extrinsic XYZ, the inverse of urdf.rs's rpy_to_r).
+/// rpy_of maps a rotation matrix to URDF's fixed-axis RPY — the inverse of urdf.rs's rpy_to_r.
 fn rpy_of(r: &Mat) -> Vec3 {
     let cp = (r.at(0, 0) * r.at(0, 0) + r.at(1, 0) * r.at(1, 0)).sqrt();
     if cp < 1e-12 {
@@ -107,7 +106,6 @@ fn rpy_of(r: &Mat) -> Vec3 {
     )
 }
 
-/// origin emits a URDF <origin .../> from a position and a quaternion.
 fn origin(p: Vec3, q: Quat) -> String {
     let rpy = rpy_of(&q.to_mat3());
     format!(
@@ -122,7 +120,6 @@ fn origin(p: Vec3, q: Quat) -> String {
 }
 
 impl MjcfConverter {
-    /// read_compiler picks up meshdir and the angle unit.
     fn read_compiler(&mut self, root: &XmlNode) {
         for el in &root.children {
             if el.name == "compiler" {
@@ -132,8 +129,8 @@ impl MjcfConverter {
         }
     }
 
-    /// read_defaults flattens every named default class under top-level <default> blocks, recursing to any depth
-    /// (one missed level silently turns collision geoms into visuals).
+    /// read_defaults recurses to any depth: one missed level silently turns collision geoms into
+    /// visuals.
     fn read_defaults(&mut self, root: &XmlNode) {
         for el in &root.children {
             if el.name != "default" {
@@ -181,7 +178,8 @@ impl MjcfConverter {
         }
     }
 
-    /// joint_defaults resolves a joint element's effective dynamics: its own attributes, then its class, then the childclass inherited from the enclosing body.
+    /// MJCF's own precedence: the element's attributes, then its class, then the childclass inherited
+    /// from the enclosing body.
     fn joint_defaults(&self, el: &XmlNode) -> MjcfDefaults {
         let mut d = MjcfDefaults::default();
         let cls_name = el.attr_or("class", &self.childclass.clone());
@@ -200,7 +198,8 @@ impl MjcfConverter {
         d
     }
 
-    /// geom_is_visual resolves a geom's contact style: the two contact classes by name, then the class table, then the contact flags.
+    /// geom_is_visual: the two contact classes by name first, then the class table, then the contact
+    /// flags.
     fn geom_is_visual(&self, el: &XmlNode) -> bool {
         let cls = el.attr_or("class", "");
         if cls == "collision" || cls == "self_collision_only" {
@@ -220,7 +219,8 @@ impl MjcfConverter {
         ct == 0.0 && ca == 0.0
     }
 
-    /// emit_geom writes one geom as <visual> or <collision>; MJCF primitive geoms map through closed unit meshes with a scale (the importer is mesh-only), a mesh geom passes through as-is.
+    /// A primitive geom has no mesh-free path through the importer, so it goes out as a closed unit
+    /// mesh with a scale; a mesh geom passes through as-is.
     fn emit_geom(
         &self,
         sb: &mut String,
@@ -267,7 +267,8 @@ impl MjcfConverter {
         sb.push_str(&format!("\t\t</{tag}>\n"));
     }
 
-    /// walk_body emits the link for one MJCF body, its parent joint, and recurses; the parent's childclass is saved and restored around the recursion.
+    /// walk_body saves and restores the enclosing childclass around the recursion, since a body's
+    /// childclass applies to all of its descendants.
     fn walk_body(
         &mut self,
         sb: &mut String,
@@ -328,7 +329,7 @@ impl MjcfConverter {
                 "simu.mjcf_convert: body {name} has {n_hinge} joints (welded/multi-DOF bodies unsupported)"
             ));
         }
-        // the parent joint: none for a freejoint body (it becomes the URDF root link), else its revolute joint
+        // the parent joint: a freejoint body has none (it becomes the URDF root link)
         if !has_free {
             let hinge = hinge.expect("one hinge joint");
             let jname = hinge.attr_or("name", &format!("{name}_joint"));
@@ -347,7 +348,8 @@ impl MjcfConverter {
                 // the literal here IS pi, to the last bit
                 rng = vec![-std::f64::consts::PI, std::f64::consts::PI];
             }
-            // the actuator table gives the effort bound when one is registered; MuJoCo 2.x models carry it on the joint element
+            // the actuator table gives the effort bound when one is registered; MuJoCo 2.x models
+            // carry it on the joint element instead
             let mut eff = 0.0;
             for a in &m.joints {
                 if a.name == jname {
@@ -390,7 +392,8 @@ impl MjcfConverter {
                 num(d.frictionloss)
             ));
             sb.push_str("\t</joint>\n");
-            // sidecar row (armature has no URDF home): merge into the actuator row read_actuators registered
+            // armature has no URDF home, so the sidecar row read_actuators registered merges with the
+            // damping/friction the URDF joint now carries
             let mut merged = false;
             for a in m.joints.iter_mut() {
                 if a.name == jname {
@@ -474,7 +477,8 @@ impl MjcfConverter {
         Ok(name)
     }
 
-    /// read_actuators maps actuator forceranges onto joint names (must run before the body walk so the effort lands in the URDF limits).
+    /// read_actuators must run before the body walk, so the effort it registers can land in the URDF
+    /// limits the walk emits.
     fn read_actuators(&self, root: &XmlNode, m: &mut MjcfModel) {
         for el in &root.children {
             if el.name != "actuator" {
@@ -500,7 +504,7 @@ impl MjcfConverter {
         }
     }
 
-    /// convert runs the full bridge: MJCF robot file (+ optional scene file for keyframes) -> MjcfModel{urdf, joints, sites, keyframes}.
+    /// The scene file is optional and contributes keyframes only.
     pub fn convert(&mut self, robot_path: &str, scene_path: &str) -> Result<MjcfModel, String> {
         let src = std::fs::read_to_string(robot_path)
             .map_err(|e| format!("simu.mjcf_convert: cannot read {robot_path}: {e}"))?;
@@ -514,7 +518,7 @@ impl MjcfConverter {
         self.read_defaults(&root);
         let mut m = MjcfModel::default();
         read_keyframes_into(robot_path, &mut m.kf_names, &mut m.kf_qpos)?;
-        // scene keyframes override same-named robot rows (the scene is the deployment's tuned posture set)
+        // the scene's keyframes override same-named robot rows: they are the tuned posture set
         let mut s_names: Vec<String> = Vec::new();
         let mut s_rows: Vec<Vec<f64>> = Vec::new();
         read_keyframes_into(scene_path, &mut s_names, &mut s_rows)?;
@@ -551,9 +555,8 @@ impl MjcfConverter {
     }
 }
 
-/// read_assets maps mesh names to files (<asset><mesh name file>); an unnamed mesh takes its filename without extension.
-///
-/// `_meshdir` is unused: the emitted filenames are relative to the URDF, which sits beside the meshes.
+/// read_assets maps mesh names to files. `_meshdir` is unused on purpose: the emitted filenames are
+/// relative to the URDF, which sits beside the meshes.
 fn read_assets(root: &XmlNode, _meshdir: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
     for el in &root.children {
@@ -582,7 +585,8 @@ fn read_assets(root: &XmlNode, _meshdir: &str) -> HashMap<String, String> {
     out
 }
 
-/// read_keyframes_into pulls <key name qpos> rows out of an MJCF file into a name table and a row table; the caller merges robot and scene tables, scene rows winning on name collisions.
+/// read_keyframes_into fills name and row tables the caller then merges, robot first and scene second
+/// — so a scene row wins on a name collision.
 fn read_keyframes_into(
     path: &str,
     names: &mut Vec<String>,

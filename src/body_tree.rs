@@ -1,7 +1,8 @@
-// body_tree.rs — BodyTree, a kinematic tree with a floating root: UrdfChain generalized to the
-// biped's shape (trunk, two legs, a neck). A configuration is (base_p, base_q, q) and a velocity
-// the base twist (omega, v) plus qd, so world-frame quantities come from FK. Parse scope: revolute
-// joints plus one type="floating" root (or a rootless root link); fixed joints rejected.
+// body_tree.rs — BodyTree, a kinematic tree with a floating root: a configuration is
+// (base_p, base_q, q) and a velocity the base twist (omega, v) plus qd, so world-frame quantities
+// come from FK. Parse scope: revolute joints plus one type="floating" root (or a rootless root
+// link); a fixed joint is rejected rather than folded, because folding one would hide a joint slot
+// from the q vector.
 
 use crate::mjcf_model::{MjcfJointExtra, MjcfModel, MjcfSite};
 use crate::urdf::{parse_joint, parse_link, rpy_to_r, ChainJoint, ChainLink};
@@ -11,16 +12,14 @@ use control_math::quat::Quat;
 use control_math::vec3::Vec3;
 use std::collections::HashMap;
 
-/// TreeNode is one body of the tree: its parent joint's constant geometry plus its inertial record.
 #[derive(Clone, Debug)]
 pub struct TreeNode {
     pub name: String,
-    /// node index of the parent body (-1 for the root)
+    /// -1 for the root
     pub parent: i32,
     pub joint: String,
-    /// this node's joint's index into q (-1 for the root)
+    /// this node's joint's index into q, or -1 for the root
     pub jo: i32,
-    /// joint origin xyz and rotation in the parent frame, and the joint axis (unit) in the joint frame
     pub p_j: Vec3,
     pub r_j: Mat,
     pub axis: Vec3,
@@ -60,15 +59,14 @@ pub struct BodyTree {
     /// document order, parents before children
     pub nodes: Vec<TreeNode>,
     pub root: usize,
-    /// actuated joints in q order (document order)
+    /// the engine's canonical order, not the document's (see load_body_tree)
     pub q_names: Vec<String>,
-    /// sidecar tables: task points, then armature/effort extras (both may be empty)
+    /// sidecar tables, both of which may be empty
     pub sites: Vec<MjcfSite>,
     pub extras: Vec<MjcfJointExtra>,
 }
 
 impl BodyTree {
-    /// n_q is the number of actuated joints; nv is 6 + n_q.
     pub fn n_q(&self) -> usize {
         self.q_names.len()
     }
@@ -93,7 +91,7 @@ impl BodyTree {
 
     /// contact_slot_of is the slot the engine's per-link CONTACT TABLE reports `name` under, or None
     /// for an unknown name. Slot `s` carries node `s + 1` and the floating root (node 0) rides the
-    /// LAST slot, so a caller must say the link's NAME, never a slot number.
+    /// LAST slot, so a link must be asked for by name: the numbers move whenever a link is inserted.
     pub fn contact_slot_of(&self, name: &str) -> Option<usize> {
         let ni = self.node_index(name)?;
         Some(if ni == 0 {
@@ -115,7 +113,7 @@ impl BodyTree {
         }
     }
 
-    /// fk computes the world frames of all nodes: the root takes its absolute pose, then every child follows the chain recursion with its q slot.
+    /// fk: world frames of all nodes (origins, rotations), in document order.
     pub fn fk(&self, base_p: Vec3, base_q: Quat, q: &[f64]) -> (Vec<Vec3>, Vec<Mat>) {
         let n = self.nodes.len();
         let mut o = vec![Vec3::default(); n];
@@ -126,7 +124,8 @@ impl BodyTree {
         (o, r)
     }
 
-    /// fk_into is fk into the caller's buffers, with two scratch matrices for the per-node intermediates.
+    /// fk into the caller's buffers; the two scratch matrices keep the per-node intermediates from
+    /// allocating.
     pub fn fk_into(
         &self,
         base_p: Vec3,
@@ -156,7 +155,6 @@ impl BodyTree {
         }
     }
 
-    /// world_z: world axis of the node's parent joint = R_parent (r_j . axis).
     pub fn world_z(&self, r: &[Mat], i: usize) -> Vec3 {
         let nd = &self.nodes[i];
         if nd.jo < 0 {
@@ -181,14 +179,13 @@ impl BodyTree {
             None => 1.0,
         }
     }
-    /// path_joints lists the q slots on the path from the root to node i, root-first.
     pub fn path_joints(&self, i: usize) -> Vec<usize> {
         let mut out: Vec<usize> = Vec::new();
         self.path_joints_into(i, &mut out);
         out
     }
 
-    /// path_joints_into is path_joints into a caller's buffer (the mass matrix needs a path per node).
+    /// path_joints into a caller's buffer: the mass matrix needs one path per node.
     pub fn path_joints_into(&self, i: usize, out: &mut Vec<usize>) {
         out.clear();
         let mut cur = i as i32;
@@ -214,7 +211,6 @@ impl BodyTree {
         s
     }
 
-    /// total_com_w: world CoM of the whole tree.
     pub fn total_com_w(&self, o: &[Vec3], r: &[Mat]) -> Vec3 {
         let mut c = Vec3::new(0.0, 0.0, 0.0);
         let mut m_tot = 0.0;
@@ -225,14 +221,14 @@ impl BodyTree {
         c.scale(1.0 / m_tot)
     }
 
-    /// com_jacobian: 3 x nv world CoM Jacobian. Base columns follow the world twist convention
-    /// dc = omega x (c - o_root) + dv: angular block -skew(c - o_root), joint columns z_j x (c_i - o_j).
+    /// com_jacobian: 3 x nv world CoM Jacobian, whose base columns follow the world twist convention
+    /// dc = omega x (c - o_root) + dv.
     pub fn com_jacobian(&self, o: &[Vec3], r: &[Mat]) -> Mat {
         let nv = self.nv();
         let mut j = Mat::zeros(3, nv);
         let m_tot = self.total_mass();
         let c = self.total_com_w(o, r);
-        // the skew is written inline rather than built: `Mat::skew`'s 3 x 3 was an allocation a call
+        // the skew is written inline rather than built: `Mat::skew` returns a fresh 3 x 3 per call
         let d = c.sub(o[self.root]);
         let sk = [[0.0, -d.z, d.y], [d.z, 0.0, -d.x], [-d.y, d.x, 0.0]];
         for rr in 0..3 {
@@ -241,7 +237,7 @@ impl BodyTree {
                 j.set(rr, 3 + cc, if rr == cc { 1.0 } else { 0.0 });
             }
         }
-        // ONE path buffer for the whole walk (examples/alloc_count_probe.rs).
+        // ONE path buffer for the whole walk, so the per-node walk does not allocate.
         let mut path: Vec<usize> = Vec::new();
         for (i, nd) in self.nodes.iter().enumerate() {
             if nd.mass == 0.0 {
@@ -262,7 +258,7 @@ impl BodyTree {
         j
     }
 
-    /// link_spatial_jacobian: 6 x nv world spatial Jacobian of node i's frame, [angular; linear]; base angular identity + linear -skew(o_i - o_root), path joints z_j in both blocks.
+    /// link_spatial_jacobian: 6 x nv world spatial Jacobian of node i, stacked [angular; linear].
     pub fn link_spatial_jacobian(&self, o: &[Vec3], r: &[Mat], i: usize) -> Mat {
         let nv = self.nv();
         let mut j = Mat::zeros(6, nv);
@@ -286,7 +282,8 @@ impl BodyTree {
         j
     }
 
-    /// link_spatial_com_jacobian: the same Jacobian for node i AT ITS CENTER OF MASS — the projection-form mass matrix integrates over this one.
+    /// The same Jacobian for node i AT ITS CENTER OF MASS — the projection-form mass matrix
+    /// integrates over this one, not over the frame Jacobian.
     pub fn link_spatial_com_jacobian(&self, o: &[Vec3], r: &[Mat], i: usize) -> Mat {
         let mut j = Mat::zeros(6, self.nv());
         let mut path = Vec::new();
@@ -311,7 +308,7 @@ impl BodyTree {
             }
         }
         let ci = self.link_com_w(o, r, i);
-        // skew(ci - o[root]) INLINE, in Mat::skew's own layout: the angular block below is minus it.
+        // skew(ci - o[root]) INLINE, in Mat::skew's own layout, since the angular block is minus it.
         let d = ci.sub(o[self.root]);
         let sk = [[0.0, -d.z, d.y], [d.z, 0.0, -d.x], [-d.y, d.x, 0.0]];
         for rr in 0..3 {
@@ -333,7 +330,7 @@ impl BodyTree {
         }
     }
 
-    /// site_frame: world pose of a named site (its body's frame composed with its constant offset); zero pose for an unknown name.
+    /// site_frame: zero pose for an unknown name.
     pub fn site_frame(&self, o: &[Vec3], r: &[Mat], name: &str) -> (Vec3, Mat) {
         for s in &self.sites {
             if s.name == name {
@@ -350,8 +347,8 @@ impl BodyTree {
         (Vec3::ZERO, control_math::mat::Mat::eye(3))
     }
 
-    /// offset_point_jacobian is the 3 x nv linear Jacobian of a point rigidly held by node i at `off`
-    /// in that node's LOCAL frame — the counterpart of site_point_jacobian for an unnamed point.
+    /// The counterpart of site_point_jacobian for a point held by node i at `off` in that node's
+    /// LOCAL frame, which has no site name.
     pub fn offset_point_jacobian(&self, o: &[Vec3], r: &[Mat], i: usize, off: Vec3) -> Mat {
         let mut j = Mat::zeros(3, self.nv());
         let mut path = Vec::new();
@@ -359,7 +356,6 @@ impl BodyTree {
         j
     }
 
-    /// offset_point_jacobian_into is the same into the caller's buffers, with the 3 x 3 skew inlined.
     pub fn offset_point_jacobian_into(
         &self,
         o: &[Vec3],
@@ -400,7 +396,6 @@ impl BodyTree {
         }
     }
 
-    /// site_point_jacobian: 3 x nv linear Jacobian of a site point.
     pub fn site_point_jacobian(&self, o: &[Vec3], r: &[Mat], name: &str) -> Mat {
         let nv = self.nv();
         let (sp, _) = self.site_frame(o, r, name);
@@ -427,7 +422,8 @@ impl BodyTree {
     }
 }
 
-/// copy_frames copies FK frames into a caller's buffers, reusing the matrices' own storage (a `Mat` is a `Vec<f64>`).
+/// copy_frames reuses the destination matrices' own storage (a `Mat` is a `Vec<f64>`), so a per-tick
+/// copy of the frames does not allocate.
 pub fn copy_frames(o: &[Vec3], r: &[Mat], o_out: &mut Vec<Vec3>, r_out: &mut Vec<Mat>) {
     o_out.clear();
     o_out.extend_from_slice(o);
@@ -437,10 +433,10 @@ pub fn copy_frames(o: &[Vec3], r: &[Mat], o_out: &mut Vec<Vec3>, r_out: &mut Vec
     }
 }
 
-/// load_body_tree parses a URDF with exactly one floating root joint into a BodyTree; links and
-/// joints reuse urdf.rs's element parsers. The q order is the ENGINE's canonical order, not the
-/// document's (children sorted alphanumerically by link name, DFS pre-order), so state and torque
-/// vectors pass verbatim; MJCF-ordered data is re-mapped by joint name (MjcfModel::keyframe_q).
+/// load_body_tree takes a URDF with exactly one floating root joint. The q order is the ENGINE's
+/// canonical order, not the document's (children sorted alphanumerically by link name, DFS
+/// pre-order), so state and torque vectors pass verbatim; MJCF-ordered data has to be re-mapped by
+/// joint name (MjcfModel::keyframe_q).
 pub fn load_body_tree(urdf_path: &str, meta: &MjcfModel) -> Result<BodyTree, String> {
     let src = std::fs::read_to_string(urdf_path)
         .map_err(|e| format!("simu.body_tree: cannot read {urdf_path}: {e}"))?;
@@ -587,8 +583,8 @@ pub fn load_body_tree(urdf_path: &str, meta: &MjcfModel) -> Result<BodyTree, Str
     Ok(t)
 }
 
-/// link_inertia_world rotates a parsed link's inertia into the link frame (the inertial rpy is in
-/// the URDF record).
+/// link_inertia_world rotates a parsed link's inertia into the link frame, which the URDF's
+/// inertial rpy has not done.
 fn link_inertia_world(lk: &ChainLink) -> Mat {
     let rin = rpy_to_r(&lk.inertial_rpy);
     rin.mul(&lk.inertia).mul(&rin.transposed())

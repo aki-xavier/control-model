@@ -21,8 +21,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [lints.clippy]
-# The one default lint this crate does not follow, and the allowance it had as part of `simu` (whose
-# Cargo.toml carries the full rationale): the numeric kernels index parallel arrays by a MODEL count
-# — `n`, `nq`, `nv`, `nbody` — not by a slice's length, so the index is the maths the loop is
-# written in and an iterator would take the bound from the slice instead.
+# The one default lint this crate does not follow: the numeric kernels index parallel arrays by a
+# MODEL count — `n`, `nq`, `nv`, `nbody` — not by a slice's length, so the index is the maths the loop
+# is written in and an iterator would take the bound from the slice instead.
 needless_range_loop = "allow"

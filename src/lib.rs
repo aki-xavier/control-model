@@ -5,19 +5,13 @@
 // chain and the floating-base `body_tree`), and their projective-GA kinematics and dynamics
 // (`pga_layer`, `kinematics`, `pga_fk`, `pga_dynamics`, `tree_dynamics`).
 //
-// It carries no plant, no engine and no control law: every consumer in the stack — the observers,
-// the task loops, the legged stack, the benches — sits above it and reaches the machine through
-// these types. The C ABI shim is NOT a dependency, so this crate builds and tests with no MuJoCo
-// present (the property simu's own build.rs could not have while these modules lived in it).
-//
-// It was extracted from the simu crate's `src/` once the dependency graph made the order obvious:
-// the cluster is closed under itself (every `crate::` reference inside it points at another member),
-// its external dependencies are only the two siblings below it plus `roxmltree`, and nothing above
-// it can be reached from below. `models/` — the URDF/MJCF sources and their meshes — came along, so
-// `urdf_path()` and `home_q()` resolve through this crate's own directory and a consumer reaches the
-// rest of the data through `models::*`. The two products (`../z1-arm`, `../g1-biped`) consume this as
-// a sibling path dependency (`{ path = "../control-model" }`) and name these modules EXPLICITLY
-// (`control_model::urdf`, ...); neither re-exports them, so a reader sees where a type comes from.
+// It carries no plant, no engine and no control law, and the C ABI shim is NOT a dependency: that
+// is why this crate builds and tests with no MuJoCo present, while the modules that do reach the
+// engine pay for it in every target. The cluster is closed under itself — every `crate::` reference
+// inside it points at another member, and its external dependencies are only the two crates below
+// it plus `roxmltree` — so it can be built, tested and released alone. `models/` — the URDF/MJCF
+// sources and their meshes — came along, so `urdf_path()` and `home_q()` resolve through this
+// crate's own directory and the rest of the data through `models::*`.
 
 pub mod body_tree;
 pub mod kinematics;

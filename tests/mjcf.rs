@@ -1,8 +1,8 @@
-// mjcf.rs — the MJCF -> URDF bridge's self-consistency suite: the converted model parses back
-// through the project's own URDF pipeline, carries the model's physics, and puts the feet where the
-// upstream 'stand' keyframe says they are. No external ground truth; one gate compares the emitted
-// URDF's text against the artifact committed in models/, and another compares the sidecar's DECODED
-// values (its rendering is Rust's `Display`, not pinned text).
+// mjcf.rs — the MJCF -> URDF bridge's self-consistency suite: the converted model parses back through
+// the same URDF pipeline, carries the model's physics, and puts the feet where the vendored 'stand'
+// keyframe says they are. There is no external ground truth; one gate compares the emitted URDF's
+// text against the artifact committed in models/, and another the sidecar's DECODED values (its
+// rendering is `serde_json`'s, not pinned text).
 
 use control_model::mjcf_convert::MjcfConverter;
 use control_model::mjcf_model::MjcfModel;
@@ -69,9 +69,8 @@ fn json_same(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     }
 }
 
-/// The sidecar's numbers, not its text: the writer renders floats through Rust's `Display`, so the
-/// gate decodes both documents and compares VALUES. A change of layout — or the loss of the old
-/// pinned form — is not a failure as long as every number reads back the same double.
+/// The sidecar's numbers, not its text: both documents are decoded and compared by VALUE, so a
+/// change of layout is not a failure as long as every number reads back the same double.
 #[test]
 fn the_sidecar_matches_the_committed_meta() {
     let m = convert_model();
@@ -314,7 +313,7 @@ fn free_root_is_the_rootless_pelvis() {
 
 // ---- helpers ----------------------------------------------------------------
 
-/// el_attr reads an attribute with the `attr_or(..).f64()` fallback.
+/// el_attr: the `attr_or(..).parse()` fallback, 0.0 for an unreadable value.
 fn el_attr(n: &control_model::xml::XmlNode, key: &str, default: &str) -> f64 {
     n.attr_or(key, default).parse().unwrap_or(0.0)
 }

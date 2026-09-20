@@ -1,7 +1,7 @@
-// pga_dynamics.rs — GA-dynamics on P(R*_{3,0,1}), same layer as pga_layer.rs, and the sole in-loop dynamics
-// backend for the fixed-base arm: ID(q,qd,0) = C·qd + g and ID(q,0,qdd) = M·qdd + g at machine precision,
-// payload included (tests/pga_dynamics.rs). The geometry (frames, world axes, world inertia maps) is PGA —
-// versor conjugation of the COM-frame tensor — and the body equation uses the screw coadjoint action.
+// pga_dynamics.rs — GA-dynamics on P(R*_{3,0,1}), the same layer as pga_layer.rs. It owes the rigid-body
+// identities ID(q,qd,0) = C·qd + g and ID(q,0,qdd) = M·qdd + g at machine precision, payload included
+// (tests/pga_dynamics.rs). The geometry (frames, world axes, world inertia maps) is PGA — versor
+// conjugation of the COM-frame tensor — and the body equation uses the screw coadjoint action.
 
 use crate::pga_layer::{euc_part, pga_biv_to_axial, pga_vec_to_biv, vec3_from_pga_vec};
 use crate::urdf::UrdfChain;
@@ -27,16 +27,14 @@ pub fn pga_screw_bracket_angular(a: Multivector, b: Multivector) -> Multivector 
     comm.add(pga_vec_to_biv([vp.x, vp.y, vp.z], [0.0, 0.0, 0.0]))
 }
 
-/// PgaDynamicsModel: the same closed-form formulas as the E3 layer, with motors and PGA screw bivectors.
 pub struct PgaDynamicsModel {
     pub n: usize,
     pub chain: UrdfChain,
-    /// payload: point mass attached at the terminal link (com_offset expressed in the terminal link frame).
+    /// payload: a point mass at the terminal link, its offset in that link's frame.
     pub payload_mass: f64,
     pub payload_com: Vec3,
-    // q-keyed frame cache (FK + per-link world axes and inertias), shared by all terms in a tick; pub
-    // because the plant layer of the crate that consumes this one reads the same frames — callers must
-    // not mutate what they read.
+    // q-keyed frame cache (FK + per-link world axes and inertias), shared by every term in a tick; pub
+    // so it can be read from outside, which is exactly why a reader must not mutate it.
     pub fr_q: Vec<f64>,
     pub fr_o: Vec<Vec3>,
     pub fr_r: Vec<Mat>,
@@ -65,7 +63,7 @@ impl PgaDynamicsModel {
         self.fr_q = Vec::new();
     }
 
-    /// scale_mass: model-mismatch knob — multiply every link mass by s and the payload point mass too.
+    /// scale_mass: a model-mismatch knob, payload mass included.
     pub fn scale_mass(&mut self, s: f64) {
         for i in 0..self.chain.link_mass.len() {
             self.chain.link_mass[i] *= s;
@@ -76,7 +74,7 @@ impl PgaDynamicsModel {
         self.invalidate_frames();
     }
 
-    /// scale_inertia: model-mismatch knob — multiply every link inertia tensor.
+    /// scale_inertia: a model-mismatch knob.
     pub fn scale_inertia(&mut self, s: f64) {
         for i in 0..self.chain.link_ic.len() {
             let mut m = self.chain.link_ic[i].clone();
@@ -92,7 +90,7 @@ impl PgaDynamicsModel {
         self.invalidate_frames();
     }
 
-    /// offset_com: model-mismatch knob — shift every link COM by (frame-relative) dv, a constant offset in the link frame.
+    /// offset_com: a model-mismatch knob — a constant offset in each link's own frame.
     pub fn offset_com(&mut self, dv: Vec3) {
         for i in 0..self.chain.link_com.len() {
             self.chain.link_com[i] = self.chain.link_com[i].add(dv);
@@ -135,7 +133,8 @@ impl PgaDynamicsModel {
             .add(self.fr_r[n - 1].mul_vec3(self.payload_com))
     }
 
-    /// mass_matrix: M_ij = sum_{L >= max(i,j)} m vbar_i . vbar_j + (I_w z_i).z_j, symmetric-filled, all geometry from the cached PGA frames.
+    /// mass_matrix: M_ij over the links both joints move, symmetric-filled, all geometry from the
+    /// cached PGA frames.
     pub fn mass_matrix(&mut self, q: &[f64]) -> Mat {
         self.frames(q);
         let n = self.n;
@@ -200,7 +199,8 @@ impl PgaDynamicsModel {
         out
     }
 
-    /// inverse_dynamics: tau = M qdd + C qd + g in a single Newton-Euler pass — the body equation F = I Vdot + ad*_V(I V) on PGA world inertias, gravity through a0 = +g, payload included.
+    /// inverse_dynamics: tau = M qdd + C qd + g in a single Newton-Euler pass — the body equation
+    /// F = I Vdot + ad*_V(I V) on PGA world inertias, gravity through a0 = +g, payload included.
     pub fn inverse_dynamics(&mut self, q: &[f64], qd: &[f64], qdd: &[f64]) -> Vec<f64> {
         self.frames(q);
         let n = self.n;
@@ -271,7 +271,7 @@ impl PgaDynamicsModel {
         out
     }
 
-    /// bias_torques: C(q,qd)·qd alone = ID(q, qd, 0) - gravity (payload-consistent).
+    /// bias_torques: C(q,qd)·qd alone = ID(q, qd, 0) - gravity, so it stays payload-consistent.
     pub fn bias_torques(&mut self, q: &[f64], qd: &[f64]) -> Vec<f64> {
         let id = self.inverse_dynamics(q, qd, &vec![0.0; self.n]);
         let g = self.gravity_torques(q);
@@ -283,7 +283,8 @@ impl PgaDynamicsModel {
     }
 }
 
-/// pga_world_inertia: world-frame inertia map I_w = R Ic R^T of a link as a 3x3 matrix — the rotor conjugation of the COM-frame tensor done as plain 3x3 arithmetic; the module's central geometry claim, checked by tests/pga_dynamics.rs.
+/// pga_world_inertia: the rotor conjugation R Ic R^T of the COM-frame tensor, done as plain 3x3
+/// arithmetic — the module's central geometry claim, checked by tests/pga_dynamics.rs.
 pub fn pga_world_inertia(r: &Mat, ic: &Mat) -> Mat {
     r.mul(ic).mul(&r.transposed())
 }

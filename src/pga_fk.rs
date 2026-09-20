@@ -1,11 +1,11 @@
-// pga_fk.rs — PgaFk, forward kinematics of a serial chain as a PGA motor chain, parsed from URDF: the
-// estimator's own motion model, which never peeks at the plant's true state (the matrix counterpart is UrdfChain::fk, urdf.rs).
+// pga_fk.rs — PgaFk, forward kinematics of a serial chain as a PGA motor chain, parsed from URDF.
+// It is the same recursion as UrdfChain::fk read through motors, so tests/pga_layer.rs checks the
+// two against each other; the motor's chain ends at the TERMINAL link frame, not at a joint.
 
 use crate::pga_layer::rotor_from_mat;
 use crate::urdf::{load_urdf_chain, UrdfChain};
 use pga::Multivector;
 
-/// PgaFk builds the end-effector motor M(q) from fixed joint-origin translators/rotors and the per-joint angle rotors.
 #[derive(Clone, Debug)]
 pub struct PgaFk {
     pub model: UrdfChain,
@@ -29,7 +29,7 @@ impl PgaFk {
         })
     }
 
-    /// motor builds the end-effector motor M(q) from the base (world) frame; q is ordered like the chain's joint_names.
+    /// q is ordered like the chain's joint_names.
     pub fn motor(&self, q: &[f64]) -> Multivector {
         let mut m = pga::motor_identity();
         for k in 0..self.model.n {

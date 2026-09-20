@@ -1,6 +1,6 @@
-// body_tree.rs — the G1's tree suite: the vendored MJCF must convert into a URDF the project's
-// own pipeline parses back, and the BodyTree must carry the whole 29-joint floating-base
-// humanoid with the engine-canonical q order.
+// body_tree.rs — the G1's tree suite: the vendored MJCF must convert into a URDF the same pipeline
+// parses back, and the BodyTree must carry the whole 29-joint floating-base humanoid in the
+// engine-canonical q order.
 
 use control_math::quat::Quat;
 use control_math::vec3::Vec3;
@@ -137,8 +137,8 @@ fn press_sign_follows_the_joints_of_this_model() {
 
 #[test]
 fn the_com_jacobian_matches_finite_differences_of_the_com() {
-    // the mixed base/joint Jacobian is what the balance law projects through: a sign or ordering
-    // error in its base block is invisible in a pose check
+    // the base block is the half a pose check cannot see: a sign or ordering error there is invisible
+    // to any displacement of the joints
     let t = g1_tree();
     let q = vec![0.0; 29];
     let base_p = Vec3::ZERO;

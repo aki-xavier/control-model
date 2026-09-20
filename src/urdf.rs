@@ -1,12 +1,8 @@
-// urdf.rs — parsed serial-chain model from URDF: the fixed model data the controller and estimator
-// consume — per-joint origin/axis/damping, per-child-link inertial parameters, and the chain ordering
-// from base link to end link. Only all-revolute serial chains are supported, with fixed joints
-// allowed only at the end (they fold into the terminal tip offset); one mid-chain is rejected.
-//
-// This file was a module of the simu crate and moved to control-model with the rest of the model
-// layer, `models/` included. It also took back the two instance items it used to leave behind —
-// `urdf_path()` (now resolved through this crate's own `models/z1/`) and `home_q()` (the Z1's task
-// start) — so a consumer names them here rather than through a facade of its own.
+// urdf.rs — parsed serial-chain model from URDF: per-joint origin/axis/damping, per-child-link
+// inertial parameters, and the chain ordering from base link to end link. Only all-revolute serial
+// chains are supported, with fixed joints allowed only at the END (they fold into the terminal tip
+// offset): a fixed joint mid-chain is rejected rather than folded, since folding it would silently
+// drop a joint from the q vector.
 
 use crate::xml::parse_document;
 use crate::xml::XmlNode;
@@ -40,30 +36,24 @@ pub struct ChainLink {
 
 #[derive(Clone, Debug)]
 pub struct UrdfChain {
-    /// revolute joints in chain order
     pub joint_names: Vec<String>,
     pub child_names: Vec<String>,
     pub n: usize,
-    /// joint origin xyz in parent link frame
     pub p_j: Vec<Vec3>,
     pub r_j: Vec<Mat>,
-    /// joint axis (unit) in joint frame
     pub axis: Vec<Vec3>,
     pub dampings: Vec<f64>,
     pub link_mass: Vec<f64>,
     pub link_com: Vec<Vec3>,
-    /// child-link inertia about CoM, link frame
     pub link_ic: Vec<Mat>,
     pub limit_lo: Vec<f64>,
     pub limit_hi: Vec<f64>,
-    /// terminal tip offset: the composed transform of the trailing FIXED joints between the last
-    /// revolute link and the requested end link (zero/identity when the chain ends at a revolute link).
+    /// terminal tip offset: zero/identity when the chain ends at a revolute link.
     pub tip_p: Vec3,
     pub tip_r: Mat,
     pub tool_reach: f64,
 }
 
-/// load_urdf_chain parses the URDF and orders the chain base -> end link.
 pub fn load_urdf_chain(
     urdf_path: &str,
     base_link: &str,
@@ -83,8 +73,8 @@ pub fn load_urdf_chain(
         }
     }
 
-    // the chain is ordered by walking BACKWARD from endLink (unambiguous for branching models);
-    // trailing fixed joints fold into tip_p/tip_r, in the terminal revolute frame.
+    // walk BACKWARD from endLink: unambiguous for branching models, and it is what puts the
+    // trailing fixed joints where they can fold into tip_p/tip_r, in the terminal revolute frame.
     let mut by_child: HashMap<String, ChainJoint> = HashMap::new();
     for j in joints {
         by_child.insert(j.child.clone(), j);
@@ -261,7 +251,8 @@ pub(crate) fn parse_link(el: &XmlNode) -> ChainLink {
     l
 }
 
-/// parse_vec3 splits an attribute on single spaces; a doubled separator leaves that component at zero.
+/// parse_vec3 splits an attribute on single spaces; a doubled separator leaves that component at
+/// zero rather than shifting the rest of the vector.
 fn parse_vec3(s: &str) -> Vec3 {
     let parts: Vec<&str> = s.split(' ').collect();
     let mut v = Vec3::ZERO;
@@ -277,13 +268,13 @@ fn parse_vec3(s: &str) -> Vec3 {
     v
 }
 
-/// f64_attr parses a float attribute: a value it cannot read is 0.0, not an error. Public because
-/// the arm's own `sim_recorder` reads scene attributes with it across the crate boundary.
+/// f64_attr parses a float attribute: a value it cannot read is 0.0, not an error, since URDF
+/// leaves attributes out freely. Public because it is also read across the crate boundary.
 pub fn f64_attr(s: &str) -> f64 {
     s.trim().parse::<f64>().unwrap_or(0.0)
 }
 
-/// rpy_to_r: URDF fixed-axis RPY (extrinsic XYZ): R = Rz(yaw) Ry(pitch) Rx(roll).
+/// rpy_to_r: URDF's own convention — fixed-axis RPY, i.e. extrinsic XYZ, so R = Rz Ry Rx.
 pub fn rpy_to_r(rpy: &Vec3) -> Mat {
     let r = rpy.x;
     let p = rpy.y;
@@ -309,8 +300,6 @@ pub fn rpy_to_r(rpy: &Vec3) -> Mat {
     rz.mul(&ry).mul(&rx)
 }
 
-/// urdf_path is the Z1 arm's URDF, resolved through this crate's own `models/z1/` directory (the
-/// model data moved here with the model layer).
 pub fn urdf_path() -> String {
     crate::models::z1_urdf().to_string_lossy().to_string()
 }
@@ -328,8 +317,7 @@ pub fn home_q() -> Vec<f64> {
 }
 
 impl UrdfChain {
-    /// fk returns the per-link world frames (o, R): o_i = o_{i-1} + R_{i-1} p_j,i and
-    /// R_i = R_{i-1} R_rpy,i R_q,i(axis_i, q_i) — the motor chain read out as plain 3x3 arithmetic.
+    /// fk returns the per-link world frames as `(origins, rotations)`, in chain order.
     pub fn fk(&self, q: &[f64]) -> (Vec<Vec3>, Vec<Mat>) {
         let n = self.n;
         let mut o: Vec<Vec3> = Vec::with_capacity(n);
@@ -357,8 +345,8 @@ impl UrdfChain {
         z.normalized()
     }
 
-    /// tip_pose: world pose of the task reference point — the terminal frame plus the tip offset and
-    /// tool reach along the terminal local +x, orientation including the tip rotation.
+    /// tip_pose: the task reference point — the terminal frame plus the tip offset and the tool
+    /// reach along the terminal local +x, orientation including the tip rotation.
     pub fn tip_pose(&self, o: &[Vec3], r: &[Mat]) -> (Vec3, Quat) {
         let i = o.len() - 1;
         let off = self.tip_p.add(Vec3::new(self.tool_reach, 0.0, 0.0));
@@ -379,7 +367,7 @@ impl UrdfChain {
         j
     }
 
-    /// link_jacobian is point_jacobian's convention at link frame i (columns zero for joints k > i).
+    /// link_jacobian is point_jacobian's convention at link frame i: columns zero past joint i.
     pub fn link_jacobian(&self, o: &[Vec3], r: &[Mat], i: usize) -> Mat {
         let n = self.n;
         let mut j = Mat::zeros(3, n);
@@ -392,8 +380,7 @@ impl UrdfChain {
         j
     }
 
-    /// full_jacobian: 6 x n [linear; angular] world Jacobian at a world point attached to the
-    /// terminal link: linear block v_k = z_k x (p - o_k), angular block z_k.
+    /// full_jacobian: 6 x n at a world point attached to the terminal link, stacked [linear; angular].
     pub fn full_jacobian(&self, o: &[Vec3], r: &[Mat], p: Vec3) -> Mat {
         let n = self.n;
         let mut j = Mat::zeros(6, n);

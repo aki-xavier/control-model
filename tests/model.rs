@@ -12,8 +12,8 @@ fn xml_reads_a_root_and_rejects_malformed_input() {
     assert!(parse_document("<a>").is_err());
 }
 
-// rpy_to_r is the URDF fixed-axis convention; zero rotation is the identity, which is the anchor the
-// rest of the chain arithmetic is built on.
+// Zero rotation is the identity, which is the anchor the rest of the chain arithmetic is built on;
+// rpy_to_r is checked against the quaternion path in tests/urdf.rs.
 #[test]
 fn zero_rpy_is_the_identity_rotation() {
     let r = rpy_to_r(&Vec3::ZERO);

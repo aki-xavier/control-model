@@ -1,7 +1,7 @@
-// tree_dynamics.rs — TreeDynamicsModel, rigid-body dynamics for the floating-base tree: mass matrix,
-// inverse dynamics, gravity and bias over nv = 6 + n_q generalized velocities [omega, v, qd]. The
-// recursion is the fixed-base RNEA lifted to a tree (gravity through a0 = +g), M = sum_links
-// J_i' I_i J_i with the armature on the diagonal; ID identities live in tests/tree_dynamics.rs.
+// tree_dynamics.rs — rigid-body dynamics for the floating-base tree over nv = 6 + n_q generalized
+// velocities [omega, v, qd]: the fixed-base RNEA lifted to a tree (gravity through a0 = +g), with
+// M = sum_links J_i' I_i J_i and the armature on the diagonal. The ID identities are the contract
+// here, checked in tests/tree_dynamics.rs.
 
 use crate::body_tree::BodyTree;
 use crate::pga_dynamics::pga_screw_bracket_angular;
@@ -11,11 +11,11 @@ use control_math::quat::Quat;
 use control_math::vec3::Vec3;
 use std::sync::Arc;
 
-/// The traits are what a HOLDER needs; the clone REBUILDS rather than copying it (see `clone_shallow`).
+/// A clone is a fresh model on the same tree, not a copy of its frame cache (`clone_shallow`).
 #[derive(Debug)]
 pub struct TreeDynamicsModel {
     pub nv: usize,
-    /// the model's tree, behind an `Arc` so the holders of one machine SHARE it.
+    /// behind an `Arc` so the copies of one model SHARE the tree instead of each holding its own.
     pub tree: Arc<BodyTree>,
     fr_q: Vec<f64>,
     fr_base_p: Vec3,
@@ -24,10 +24,10 @@ pub struct TreeDynamicsModel {
     fr_r: Vec<Mat>,
     fr_iw: Vec<Mat>,
     fr_valid: bool,
-    /// mass matrix scratch: the 6 x nv Jacobian and the walk path (see examples/alloc_count_probe.rs).
+    /// mass matrix scratch: the 6 x nv Jacobian and the walk path, so a mass matrix does not allocate.
     sc_j: Mat,
     sc_path: Vec<usize>,
-    /// inverse dynamics scratch: the pass vectors and the buffers the biases are built from.
+    /// inverse dynamics scratch: the pass vectors.
     sc_om: Vec<Vec3>,
     sc_al: Vec<Vec3>,
     sc_ao: Vec<Vec3>,
@@ -35,7 +35,7 @@ pub struct TreeDynamicsModel {
     sc_n: Vec<Vec3>,
     sc_zero: Vec<f64>,
     sc_id: Vec<f64>,
-    /// the frame pass's two intermediate 3 x 3 matrices (parent rotation product, joint rotation).
+    /// the frame pass's two intermediate 3 x 3 matrices.
     sc_t1: Mat,
     sc_t2: Mat,
 }
@@ -94,7 +94,6 @@ impl TreeDynamicsModel {
         self.fr_q = q.to_vec();
         self.fr_base_p = base_p;
         self.fr_base_q = base_q;
-        // the FK pass writes into this model's own frame buffers and scratch.
         self.tree.fk_into(
             base_p,
             base_q,
@@ -106,7 +105,6 @@ impl TreeDynamicsModel {
         self.fr_iw
             .resize_with(self.tree.nodes.len(), || Mat::zeros(3, 3));
         for i in 0..self.tree.nodes.len() {
-            // I_w = R I R'
             self.fr_r[i].mul_into(&self.tree.nodes[i].ic, &mut self.sc_t1);
             self.fr_r[i].transposed_into(&mut self.sc_t2);
             self.sc_t1.mul_into(&self.sc_t2, &mut self.fr_iw[i]);
@@ -114,17 +112,17 @@ impl TreeDynamicsModel {
         self.fr_valid = true;
     }
 
-    /// refresh_frames is the cache's own refresh, for a caller that needs the frames about to be used.
+    /// refresh_frames is the cache's own refresh, for a reader that needs the frames about to be used.
     pub fn refresh_frames(&mut self, base_p: Vec3, base_q: Quat, q: &[f64]) {
         self.frames(base_p, base_q, q);
     }
 
-    /// frames_now lends out the cache's frames: the state `refresh_frames` was last given.
+    /// frames_now lends out the frames for the state `refresh_frames` was last given.
     pub fn frames_now(&self) -> (&[Vec3], &[Mat]) {
         (&self.fr_o, &self.fr_r)
     }
 
-    /// mass_matrix: M = sum_links J_lin' m J_lin + J_ang' I_w J_ang over nv, plus the armature.
+    /// mass_matrix: J' I J over every link, with the armature on the joint diagonal.
     pub fn mass_matrix(&mut self, base_p: Vec3, base_q: Quat, q: &[f64]) -> Mat {
         let mut m = Mat::zeros(self.nv, self.nv);
         self.mass_matrix_into(base_p, base_q, q, &mut m);
@@ -154,7 +152,6 @@ impl TreeDynamicsModel {
             );
             let j = &self.sc_j;
             let node_mass = self.tree.nodes[i].mass;
-            // angular block: J_ang' I_w J_ang; linear block: m J_lin' J_lin
             for a in 0..nv {
                 let mut ia = [0.0f64; 3];
                 for k in 0..3 {
@@ -181,9 +178,9 @@ impl TreeDynamicsModel {
         }
     }
 
-    /// inverse_dynamics: tau = M alpha + C nu + g in one Newton-Euler pass; nu = [omega, v, qd],
-    /// alpha = [omega_dot, v_dot, qdd]. Base rows are the world wrench at the root origin, joint rows
-    /// the actuator torques, armature on the diagonal.
+    /// inverse_dynamics: tau = M alpha + C nu + g in one Newton-Euler pass, nu = [omega, v, qd] and
+    /// alpha = [omega_dot, v_dot, qdd]. The base rows are the world wrench at the root origin rather
+    /// than a torque, so they are read as such.
     pub fn inverse_dynamics(
         &mut self,
         base_p: Vec3,
@@ -197,7 +194,6 @@ impl TreeDynamicsModel {
         out
     }
 
-    /// inverse_dynamics_into is inverse_dynamics into the caller's vector, through this model's scratch.
     pub fn inverse_dynamics_into(
         &mut self,
         base_p: Vec3,
@@ -209,8 +205,7 @@ impl TreeDynamicsModel {
     ) {
         self.frames(base_p, base_q, q);
         let nn = self.tree.nodes.len();
-        // outward pass: per-node world omega/alpha and frame-origin linear acceleration, the +9.81
-        // pseudo-acceleration entering at the root.
+        // outward pass; the root is where the +9.81 pseudo-acceleration enters.
         self.sc_om.clear();
         self.sc_om.resize(nn, Vec3::default());
         self.sc_al.clear();
@@ -236,7 +231,7 @@ impl TreeDynamicsModel {
                 om[i] = om[p].add(z.scale(qd));
             }
         }
-        // inward pass: body equation per node, children wrenches summed into the parent.
+        // inward pass: the body equation per node, children's wrenches summed into the parent.
         self.sc_f.clear();
         self.sc_f.resize(nn, Vec3::ZERO);
         self.sc_n.clear();
@@ -290,7 +285,6 @@ impl TreeDynamicsModel {
         }
     }
 
-    /// gravity_torques: the gravity-compensation vector ID(q, 0, 0).
     pub fn gravity_torques(&mut self, base_p: Vec3, base_q: Quat, q: &[f64]) -> Vec<f64> {
         let mut out = Vec::new();
         self.gravity_torques_into(base_p, base_q, q, &mut out);
@@ -311,14 +305,14 @@ impl TreeDynamicsModel {
         self.sc_zero = zero;
     }
 
-    /// bias_torques: C nu alone = ID(q, nu, 0) - ID(q, 0, 0).
+    /// bias_torques: C nu alone, as ID(q, nu, 0) - ID(q, 0, 0).
     pub fn bias_torques(&mut self, base_p: Vec3, base_q: Quat, q: &[f64], nu: &[f64]) -> Vec<f64> {
         let mut out = Vec::new();
         self.bias_torques_into(base_p, base_q, q, nu, &mut out);
         out
     }
 
-    /// bias_torques_into is bias_torques into the caller's vector (two inverse passes).
+    /// bias_torques into the caller's vector; two inverse passes, and no allocation.
     pub fn bias_torques_into(
         &mut self,
         base_p: Vec3,
