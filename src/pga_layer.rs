@@ -2,6 +2,10 @@
 // embed/readout, quaternion/matrix -> rotor, and the coordinate-free pose-error screw. It holds no
 // types of its own — urdf.rs, kinematics.rs, pga_fk.rs and pga_dynamics.rs are its users.
 //
+// The quat -> rotor reading is RE-EXPORTED, not stated here: the Plant contract hands its poses out in
+// the same rotor (`control_base::plant::rotor_of_quat`), so the one copy lives in the crate below and
+// this name is that function.
+//
 // Conventions (pga crate, basis e1 e2 e3 e0 with e0^2 = 0): bivector parts are
 // (b12, b13, b23, b01, b02, b03), Euclidean lines then ideal lines = v ^ e0; axial readout is
 // (b23, -b13, b12); rotor(axis) = cos(t/2) - sin(t/2) (n I3), apply = M X M~; motor =
@@ -39,9 +43,12 @@ pub fn vec3_from_pga_vec(m: Multivector) -> Vec3 {
 }
 
 /// rotor_from_quat: rotor = w - sin(t/2) (n I3), so the bivector parts are (z, -y, x).
-pub fn rotor_from_quat(q: Quat) -> Multivector {
-    pga::mv_scalar(q.w).sub(pga::mv_bivector(q.z, -q.y, q.x, 0.0, 0.0, 0.0))
-}
+///
+/// Why this is a re-export and not a second reading of the same four numbers: the Plant contract hands
+/// its poses out in this rotor too (`control_base::plant::rotor_of_quat`), so the ONE conversion lives
+/// in the crate below and both sides are the same code. A convention with two spellings is two
+/// conventions the day one of them moves.
+pub use control_base::plant::rotor_of_quat as rotor_from_quat;
 
 pub fn rotor_from_mat(r: &Mat) -> Multivector {
     rotor_from_quat(Quat::from_mat3(r))

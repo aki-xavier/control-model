@@ -11,6 +11,12 @@ license = "MIT"
 [dependencies]
 pga = { path = "../pga" }
 control-math = { path = "../control-math" }
+# The ONE thing this crate takes from the base: the pose -> motor conversion, which the contract states
+# and this crate used to spell a second time (`pga_layer::rotor_from_quat`, `Kinematics::pose_to_motor`
+# both read the pair here now). One copy, in the lower crate — a conversion written twice is two
+# conventions the day one of them moves. Nothing of the contract's is used, so the model still carries
+# no plant, no engine and no law.
+control-base = { path = "../control-base" }
 roxmltree = "0.21.1"
 # The sidecar is JSON, so the encoder is `serde_json`: one tested writer instead of the hand-rolled
 # one this crate used to carry. `float_roundtrip` is REQUIRED on the READER side — the gates decode

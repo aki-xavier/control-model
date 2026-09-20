@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "control-base"
+version = "0.1.0"
+dependencies = [
+ "control-math",
+ "pga",
+]
+
+[[package]]
 name = "control-math"
 version = "0.1.0"
 dependencies = [
@@ -13,6 +21,7 @@ dependencies = [
 name = "control-model"
 version = "0.1.0"
 dependencies = [
+ "control-base",
  "control-math",
  "pga",
  "roxmltree",

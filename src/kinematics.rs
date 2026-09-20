@@ -3,7 +3,7 @@
 // different notions, and tests/pga_layer.rs pins the difference so neither is swapped in for the
 // other.
 
-use crate::pga_layer::{pga_pose_error, rotor_from_quat};
+use crate::pga_layer::pga_pose_error;
 use control_math::quat::Quat;
 use control_math::vec3::Vec3;
 use pga::Multivector;
@@ -11,9 +11,11 @@ use pga::Multivector;
 pub struct Kinematics;
 
 impl Kinematics {
-    /// Motor M = T(p) . R (rotate first, then translate).
+    /// Motor M = T(p) . R (rotate first, then translate) — the same motor the Plant contract's own
+    /// `frame_motor` / `task_motor` hand out, from the one conversion below both
+    /// (`control_base::plant::motor_of_pose`).
     pub fn pose_to_motor(&self, position: Vec3, quaternion: Quat) -> Multivector {
-        pga::translator(position.to_array()).gp(rotor_from_quat(quaternion))
+        control_base::plant::motor_of_pose(position, quaternion)
     }
 
     pub fn motor_log_error(&self, target: Multivector, current: Multivector) -> Multivector {

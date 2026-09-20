@@ -25,15 +25,19 @@ data         models      the model-data paths (models/: z1, unitree_g1, wall),
                          resolved through this crate's own CARGO_MANIFEST_DIR
 ```
 
-It depends on the two crates below it — [`pga`](../pga) and
-[`control-math`](../control-math) — and on `roxmltree` for the XML parse. It does
+It depends on the three crates below it — [`pga`](../pga),
+[`control-math`](../control-math) and [`control-base`](../control-base) — and on
+`roxmltree` for the XML parse. It does
 NOT depend on the C ABI shim, and has no `build.rs`: this crate builds and tests
-with no engine present.
+with no engine present. The one thing it takes from `control-base` is the
+pose -> motor conversion the Plant contract also states, so the convention lives
+once, in the lower crate, and `pga_layer::rotor_from_quat` and
+`Kinematics::pose_to_motor` read the pair there.
 
 The cluster is closed under itself: every `crate::` reference inside it points at
 another member (`urdf -> xml`, `body_tree -> urdf/mjcf_model/xml`,
 `tree_dynamics -> body_tree/pga_dynamics/pga_layer`, ...), and its only external
-edges are the two crates below it and `roxmltree`. That is why it can be built,
+edges are the three crates below it and `roxmltree`. That is why it can be built,
 tested and released alone.
 
 `models/` — the URDF/MJCF sources and the meshes they reference — is here with it:
