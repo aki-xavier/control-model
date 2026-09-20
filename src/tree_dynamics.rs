@@ -5,10 +5,10 @@
 
 use crate::body_tree::BodyTree;
 use crate::pga_dynamics::pga_screw_bracket_angular;
-use crate::pga_layer::{pga_biv_to_axial, pga_vec_to_biv};
+use crate::pga_layer::{pga_biv_to_axial, pga_vec_to_biv, rotor_identity};
 use control_math::mat::Mat;
-use control_math::quat::Quat;
 use control_math::vec3::Vec3;
+use pga::Multivector;
 use std::sync::Arc;
 
 /// A clone is a fresh model on the same tree, not a copy of its frame cache (`clone_shallow`).
@@ -19,7 +19,7 @@ pub struct TreeDynamicsModel {
     pub tree: Arc<BodyTree>,
     fr_q: Vec<f64>,
     fr_base_p: Vec3,
-    fr_base_q: Quat,
+    fr_base_rotor: Multivector,
     fr_o: Vec<Vec3>,
     fr_r: Vec<Mat>,
     fr_iw: Vec<Mat>,
@@ -49,7 +49,7 @@ impl TreeDynamicsModel {
             tree,
             fr_q: Vec::new(),
             fr_base_p: Vec3::default(),
-            fr_base_q: Quat::IDENTITY,
+            fr_base_rotor: rotor_identity(),
             fr_o: Vec::new(),
             fr_r: Vec::new(),
             fr_iw: Vec::new(),
@@ -74,11 +74,11 @@ impl TreeDynamicsModel {
         TreeDynamicsModel::new(Arc::clone(&self.tree))
     }
 
-    fn frames(&mut self, base_p: Vec3, base_q: Quat, q: &[f64]) {
+    fn frames(&mut self, base_p: Vec3, base_rotor: Multivector, q: &[f64]) {
         if self.fr_valid
             && self.fr_q.len() == q.len()
             && self.fr_base_p == base_p
-            && self.fr_base_q == base_q
+            && self.fr_base_rotor == base_rotor
         {
             let mut same = true;
             for i in 0..q.len() {
@@ -93,10 +93,10 @@ impl TreeDynamicsModel {
         }
         self.fr_q = q.to_vec();
         self.fr_base_p = base_p;
-        self.fr_base_q = base_q;
+        self.fr_base_rotor = base_rotor;
         self.tree.fk_into(
             base_p,
-            base_q,
+            base_rotor,
             q,
             &mut self.fr_o,
             &mut self.fr_r,
@@ -113,8 +113,8 @@ impl TreeDynamicsModel {
     }
 
     /// refresh_frames is the cache's own refresh, for a reader that needs the frames about to be used.
-    pub fn refresh_frames(&mut self, base_p: Vec3, base_q: Quat, q: &[f64]) {
-        self.frames(base_p, base_q, q);
+    pub fn refresh_frames(&mut self, base_p: Vec3, base_rotor: Multivector, q: &[f64]) {
+        self.frames(base_p, base_rotor, q);
     }
 
     /// frames_now lends out the frames for the state `refresh_frames` was last given.
@@ -123,14 +123,20 @@ impl TreeDynamicsModel {
     }
 
     /// mass_matrix: J' I J over every link, with the armature on the joint diagonal.
-    pub fn mass_matrix(&mut self, base_p: Vec3, base_q: Quat, q: &[f64]) -> Mat {
+    pub fn mass_matrix(&mut self, base_p: Vec3, base_rotor: Multivector, q: &[f64]) -> Mat {
         let mut m = Mat::zeros(self.nv, self.nv);
-        self.mass_matrix_into(base_p, base_q, q, &mut m);
+        self.mass_matrix_into(base_p, base_rotor, q, &mut m);
         m
     }
 
-    pub fn mass_matrix_into(&mut self, base_p: Vec3, base_q: Quat, q: &[f64], m: &mut Mat) {
-        self.frames(base_p, base_q, q);
+    pub fn mass_matrix_into(
+        &mut self,
+        base_p: Vec3,
+        base_rotor: Multivector,
+        q: &[f64],
+        m: &mut Mat,
+    ) {
+        self.frames(base_p, base_rotor, q);
         let nv = self.nv;
         if m.rows != nv || m.cols != nv {
             *m = Mat::zeros(nv, nv);
@@ -184,26 +190,26 @@ impl TreeDynamicsModel {
     pub fn inverse_dynamics(
         &mut self,
         base_p: Vec3,
-        base_q: Quat,
+        base_rotor: Multivector,
         q: &[f64],
         nu: &[f64],
         alpha: &[f64],
     ) -> Vec<f64> {
         let mut out = Vec::new();
-        self.inverse_dynamics_into(base_p, base_q, q, nu, alpha, &mut out);
+        self.inverse_dynamics_into(base_p, base_rotor, q, nu, alpha, &mut out);
         out
     }
 
     pub fn inverse_dynamics_into(
         &mut self,
         base_p: Vec3,
-        base_q: Quat,
+        base_rotor: Multivector,
         q: &[f64],
         nu: &[f64],
         alpha: &[f64],
         out: &mut Vec<f64>,
     ) {
-        self.frames(base_p, base_q, q);
+        self.frames(base_p, base_rotor, q);
         let nn = self.tree.nodes.len();
         // outward pass; the root is where the +9.81 pseudo-acceleration enters.
         self.sc_om.clear();
@@ -285,30 +291,41 @@ impl TreeDynamicsModel {
         }
     }
 
-    pub fn gravity_torques(&mut self, base_p: Vec3, base_q: Quat, q: &[f64]) -> Vec<f64> {
+    pub fn gravity_torques(
+        &mut self,
+        base_p: Vec3,
+        base_rotor: Multivector,
+        q: &[f64],
+    ) -> Vec<f64> {
         let mut out = Vec::new();
-        self.gravity_torques_into(base_p, base_q, q, &mut out);
+        self.gravity_torques_into(base_p, base_rotor, q, &mut out);
         out
     }
 
     pub fn gravity_torques_into(
         &mut self,
         base_p: Vec3,
-        base_q: Quat,
+        base_rotor: Multivector,
         q: &[f64],
         out: &mut Vec<f64>,
     ) {
         let mut zero = std::mem::take(&mut self.sc_zero);
         zero.clear();
         zero.resize(self.nv, 0.0);
-        self.inverse_dynamics_into(base_p, base_q, q, &zero, &zero, out);
+        self.inverse_dynamics_into(base_p, base_rotor, q, &zero, &zero, out);
         self.sc_zero = zero;
     }
 
     /// bias_torques: C nu alone, as ID(q, nu, 0) - ID(q, 0, 0).
-    pub fn bias_torques(&mut self, base_p: Vec3, base_q: Quat, q: &[f64], nu: &[f64]) -> Vec<f64> {
+    pub fn bias_torques(
+        &mut self,
+        base_p: Vec3,
+        base_rotor: Multivector,
+        q: &[f64],
+        nu: &[f64],
+    ) -> Vec<f64> {
         let mut out = Vec::new();
-        self.bias_torques_into(base_p, base_q, q, nu, &mut out);
+        self.bias_torques_into(base_p, base_rotor, q, nu, &mut out);
         out
     }
 
@@ -316,7 +333,7 @@ impl TreeDynamicsModel {
     pub fn bias_torques_into(
         &mut self,
         base_p: Vec3,
-        base_q: Quat,
+        base_rotor: Multivector,
         q: &[f64],
         nu: &[f64],
         out: &mut Vec<f64>,
@@ -325,8 +342,8 @@ impl TreeDynamicsModel {
         zero.clear();
         zero.resize(self.nv, 0.0);
         let mut id = std::mem::take(&mut self.sc_id);
-        self.inverse_dynamics_into(base_p, base_q, q, nu, &zero, &mut id);
-        self.gravity_torques_into(base_p, base_q, q, out);
+        self.inverse_dynamics_into(base_p, base_rotor, q, nu, &zero, &mut id);
+        self.gravity_torques_into(base_p, base_rotor, q, out);
         for i in 0..self.nv {
             out[i] = id[i] - out[i];
         }

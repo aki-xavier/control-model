@@ -2,11 +2,11 @@
 // parses back, and the BodyTree must carry the whole 29-joint floating-base humanoid in the
 // engine-canonical q order.
 
-use control_math::quat::Quat;
 use control_math::vec3::Vec3;
 use control_model::body_tree::{load_body_tree, BodyTree};
 use control_model::mjcf_convert::MjcfConverter;
 use control_model::mjcf_model::MjcfModel;
+use control_model::pga_layer::rotor_identity;
 use std::path::PathBuf;
 
 fn repo_root() -> PathBuf {
@@ -86,7 +86,7 @@ fn g1_engine_order_q_names() {
 #[test]
 fn g1_stands_on_both_feet_at_zero_q() {
     let t = g1_tree();
-    let (o, r) = t.fk(Vec3::ZERO, Quat::IDENTITY, &vec![0.0; 29]);
+    let (o, r) = t.fk(Vec3::ZERO, rotor_identity(), &vec![0.0; 29]);
     // the all-zero posture of a humanoid MJCF is the straight stand: feet ~0.76 m below the pelvis
     // (measured), level to conversion precision, foot sites at the ankle origins
     let l_i = t.node_index("left_ankle_roll_link").expect("left ankle");
@@ -121,7 +121,7 @@ fn the_tree_mass_is_the_sum_of_its_links() {
 fn press_sign_follows_the_joints_of_this_model() {
     // toe and heel opposite, the two legs mirrored
     let t = g1_tree();
-    let (_, r) = t.fk(Vec3::ZERO, Quat::IDENTITY, &vec![0.0; 29]);
+    let (_, r) = t.fk(Vec3::ZERO, rotor_identity(), &vec![0.0; 29]);
     let la = t
         .q_index("left_ankle_pitch_joint")
         .expect("left ankle pitch");
@@ -142,7 +142,7 @@ fn the_com_jacobian_matches_finite_differences_of_the_com() {
     let t = g1_tree();
     let q = vec![0.0; 29];
     let base_p = Vec3::ZERO;
-    let base_q = Quat::IDENTITY;
+    let base_q = rotor_identity();
     let (o, r) = t.fk(base_p, base_q, &q);
     let j = t.com_jacobian(&o, &r);
     let c0 = t.total_com_w(&o, &r);

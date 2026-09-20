@@ -55,3 +55,15 @@ compares VALUES rather than text.) The six that need a robot:
 `urdf.rs`, `pga_layer.rs`, `pga_dynamics.rs`, `tree_dynamics.rs`, `mjcf.rs`,
 `body_tree.rs`. They resolve `models/` through this crate's own
 `CARGO_MANIFEST_DIR`, so they run with no engine present.
+
+`make test` is the suite and then the comment rules over the tree, so the lint is
+not a step anyone has to remember. The rules are `../comment-why`, a sibling
+project that reads text and asks the compiler for nothing — which is what lets
+the same rules also be an ordinary test here, `tests/comment_why.rs`, with no
+nightly and no plugin. They decide three shapes: process narration and filler, a
+comment line whose content words are all in the code below it, and a short doc
+comment that re-says the item's own name. The rest is a reader's call, and
+`make comments` prints that crate's local approximation — long, marker-free and
+mostly the code's own words — as advice it never fails on. The rules are a
+DEV-dependency: the model basis above is still the whole of what this crate
+links.

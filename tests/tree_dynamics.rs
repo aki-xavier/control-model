@@ -4,12 +4,12 @@
 // ID = M alpha + C nu + g and the CoM finite difference are self-consistency.
 
 use control_math::mat::Mat;
-use control_math::quat::Quat;
 use control_math::vec3::Vec3;
 use control_model::body_tree::{load_body_tree, BodyTree};
 use control_model::mjcf_convert::MjcfConverter;
 use control_model::mjcf_model::MjcfModel;
 use control_model::pga_dynamics::PgaDynamicsModel;
+use control_model::pga_layer::{rotor_from_mat, rotor_from_quat, rotor_identity};
 use control_model::tree_dynamics::TreeDynamicsModel;
 use control_model::urdf::load_urdf_chain;
 use std::path::PathBuf;
@@ -64,7 +64,7 @@ fn dmax_identity(dr: &Mat) -> f64 {
 fn tree_fk_matches_chain_fk_per_branch() {
     let (t, _) = g1_tree();
     let q = rand_q(t.n_q(), 0.3);
-    let (o, r) = t.fk(Vec3::ZERO, Quat::IDENTITY, &q);
+    let (o, r) = t.fk(Vec3::ZERO, rotor_identity(), &q);
     for end_link in ["left_ankle_roll_link", "right_ankle_roll_link"] {
         let c = load_urdf_chain(&t.urdf, "pelvis", end_link).expect("leg chain");
         // matched to the tree BY NAME: the tree's q order is the engine's canonical one, the chain's is the URDF path
@@ -92,7 +92,7 @@ fn gravity_matches_chain_backend_and_total_wrench() {
     let (t, _) = g1_tree();
     let mut d = TreeDynamicsModel::new(t.clone());
     let q = rand_q(t.n_q(), 1.1);
-    let g = d.gravity_torques(Vec3::ZERO, Quat::IDENTITY, &q);
+    let g = d.gravity_torques(Vec3::ZERO, rotor_identity(), &q);
     for end_link in ["left_ankle_roll_link", "right_ankle_roll_link"] {
         let c = load_urdf_chain(&t.urdf, "pelvis", end_link).expect("leg chain");
         let mut dc = PgaDynamicsModel::new(c.clone());
@@ -119,7 +119,7 @@ fn mass_matrix_matches_chain_blocks_and_is_symmetric_pd() {
     let (t, _) = g1_tree();
     let mut d = TreeDynamicsModel::new(t.clone());
     let q = rand_q(t.n_q(), 2.3);
-    let m = d.mass_matrix(Vec3::ZERO, Quat::IDENTITY, &q);
+    let m = d.mass_matrix(Vec3::ZERO, rotor_identity(), &q);
     let c = load_urdf_chain(&t.urdf, "pelvis", "left_ankle_roll_link").expect("leg chain");
     let mut dc = PgaDynamicsModel::new(c.clone());
     let mut qc = vec![0.0; c.n];
@@ -162,7 +162,7 @@ fn bias_matches_chain_backend() {
     for i in 0..t.n_q() {
         nu[6 + i] = 0.4 * (0.9 + 1.3 * i as f64).cos();
     }
-    let b = d.bias_torques(Vec3::ZERO, Quat::IDENTITY, &q, &nu);
+    let b = d.bias_torques(Vec3::ZERO, rotor_identity(), &q, &nu);
     let cl = load_urdf_chain(&t.urdf, "pelvis", "left_ankle_roll_link").expect("leg chain");
     let mut dl = PgaDynamicsModel::new(cl.clone());
     let mut qc = vec![0.0; cl.n];
@@ -196,7 +196,7 @@ fn inverse_dynamics_identity() {
         alpha[i] = 0.5 * (0.4 + 0.9 * i as f64).cos();
     }
     let bp = Vec3::new(0.01, -0.02, 0.12);
-    let bq = Quat::from_mat3(&Mat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), 0.2));
+    let bq = rotor_from_mat(&Mat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), 0.2));
     let id = d.inverse_dynamics(bp, bq, &q, &nu, &alpha);
     let m = d.mass_matrix(bp, bq, &q);
     let rhs = m.mul_vec(&alpha);
@@ -213,7 +213,7 @@ fn inverse_dynamics_identity() {
 fn com_jacobian_finite_difference() {
     let (t, _) = g1_tree();
     let bp = Vec3::new(0.02, 0.01, 0.12);
-    let bq = Quat::IDENTITY;
+    let bq = rotor_identity();
     let q = rand_q(t.n_q(), 6.3);
     let (o, r) = t.fk(bp, bq, &q);
     let j = t.com_jacobian(&o, &r);
@@ -235,11 +235,11 @@ fn com_jacobian_finite_difference() {
     for c in 0..3 {
         let mut rv = [0.0, 0.0, 0.0];
         rv[c] = h;
-        let dq = Quat::from_mat3(&Mat::from_axis_angle(
+        let dq = rotor_from_mat(&Mat::from_axis_angle(
             Vec3::new(rv[0], rv[1], rv[2]).normalized(),
             h,
         ));
-        let (o2, r2) = t.fk(bp, dq.mul(bq), &q);
+        let (o2, r2) = t.fk(bp, dq.gp(bq), &q);
         let cd = t.total_com_w(&o2, &r2).sub(c0).scale(1.0 / h);
         for rr in 0..3 {
             assert!(
@@ -266,6 +266,7 @@ fn com_jacobian_finite_difference() {
 fn stand_com_projects_inside_support_span() {
     let (t, m) = g1_tree();
     let (bp, bq) = m.keyframe_base("stand");
+    let bq = rotor_from_quat(bq);
     let q = m.keyframe_q("stand", &t.q_names);
     assert_eq!(q.len(), 29);
     let (o, r) = t.fk(bp, bq, &q);

@@ -6,7 +6,7 @@ use control_math::quat::Quat;
 use control_math::vec3::Vec3;
 use control_model::kinematics::Kinematics;
 use control_model::pga_fk::PgaFk;
-use control_model::pga_layer::{pga_biv_to_axial, pga_pose_error, rotor_from_quat};
+use control_model::pga_layer::{mat_from_rotor, pga_biv_to_axial, pga_pose_error, rotor_from_quat};
 use control_model::urdf::{load_urdf_chain, urdf_path};
 
 fn pga_test_chain() -> control_model::urdf::UrdfChain {
@@ -233,5 +233,49 @@ fn the_motor_chain_and_the_matrix_chain_are_the_same_kinematics() {
         "the motor chain and the matrix chain disagree: pose {worst_pose:.3e}, position \
          {worst_pos:.3e} m, rotation {worst_rot:.3e} — the two kinematics are no longer the same \
          machine"
+    );
+}
+
+/// The BASE-POSE reading, pinned to the matrix it replaced: `mat_from_rotor` must return EXACTLY what
+/// `Quat::to_mat3` returns for the same four numbers, because a base pose arrives as a rotor now while
+/// every Jacobian and inertia map downstream is still 3 x 3. The angles below span a vanishing
+/// perturbation and a large one on purpose: a sign error in this reading is a rotation by the INVERSE
+/// angle, which a random sample of postures can hide in a tolerance and a small angle cannot.
+#[test]
+fn mat_from_rotor_is_exactly_the_matrix_the_quaternion_path_wrote() {
+    let mut worst_q = 0.0f64;
+    let mut worst_m = 0.0f64;
+    for angle in [1e-9, 1e-7, 0.2, std::f64::consts::FRAC_PI_2, 2.9] {
+        for axis in [
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.31, -0.52, 0.79).normalized(),
+        ] {
+            let r = Mat::from_axis_angle(axis, angle);
+            let q = Quat::from_mat3(&r);
+            let via_q = q.to_mat3();
+            let via_rotor = mat_from_rotor(&rotor_from_quat(q));
+            let via_axis = mat_from_rotor(&pga::rotor(axis.to_array(), angle));
+            for i in 0..3 {
+                for j in 0..3 {
+                    worst_q = worst_q.max((via_rotor.at(i, j) - via_q.at(i, j)).abs());
+                    worst_m = worst_m.max((via_axis.at(i, j) - r.at(i, j)).abs());
+                }
+            }
+        }
+    }
+    eprintln!(
+        "the rotor reading against Quat::to_mat3: {worst_q:.3e}; against Mat::from_axis_angle: \
+         {worst_m:.3e}"
+    );
+    assert!(
+        worst_q == 0.0,
+        "mat_from_rotor and Quat::to_mat3 differ by {worst_q:.3e}: the base-pose reading is no \
+         longer the matrix the quaternion path wrote"
+    );
+    assert!(
+        worst_m < 1e-12,
+        "mat_from_rotor and Mat::from_axis_angle differ by {worst_m:.3e}"
     );
 }

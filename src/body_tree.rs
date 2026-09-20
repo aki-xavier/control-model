@@ -5,11 +5,12 @@
 // from the q vector.
 
 use crate::mjcf_model::{MjcfJointExtra, MjcfModel, MjcfSite};
+use crate::pga_layer::mat_from_rotor_into;
 use crate::urdf::{parse_joint, parse_link, rpy_to_r, ChainJoint, ChainLink};
 use crate::xml::parse_document;
 use control_math::mat::Mat;
-use control_math::quat::Quat;
 use control_math::vec3::Vec3;
+use pga::Multivector;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
@@ -114,13 +115,13 @@ impl BodyTree {
     }
 
     /// fk: world frames of all nodes (origins, rotations), in document order.
-    pub fn fk(&self, base_p: Vec3, base_q: Quat, q: &[f64]) -> (Vec<Vec3>, Vec<Mat>) {
+    pub fn fk(&self, base_p: Vec3, base_rotor: Multivector, q: &[f64]) -> (Vec<Vec3>, Vec<Mat>) {
         let n = self.nodes.len();
         let mut o = vec![Vec3::default(); n];
         let mut r = vec![Mat::zeros(3, 3); n];
         let mut t1 = Mat::zeros(3, 3);
         let mut t2 = Mat::zeros(3, 3);
-        self.fk_into(base_p, base_q, q, &mut o, &mut r, (&mut t1, &mut t2));
+        self.fk_into(base_p, base_rotor, q, &mut o, &mut r, (&mut t1, &mut t2));
         (o, r)
     }
 
@@ -129,7 +130,7 @@ impl BodyTree {
     pub fn fk_into(
         &self,
         base_p: Vec3,
-        base_q: Quat,
+        base_rotor: Multivector,
         q: &[f64],
         o: &mut Vec<Vec3>,
         r: &mut Vec<Mat>,
@@ -143,7 +144,7 @@ impl BodyTree {
         for (i, nd) in self.nodes.iter().enumerate() {
             if nd.parent < 0 {
                 o[i] = base_p;
-                base_q.to_mat3_into(&mut r[i]);
+                mat_from_rotor_into(&base_rotor, &mut r[i]);
             } else {
                 let p = nd.parent as usize;
                 let qi = if nd.jo >= 0 { q[nd.jo as usize] } else { 0.0 };

@@ -50,8 +50,32 @@ pub fn vec3_from_pga_vec(m: Multivector) -> Vec3 {
 /// conventions the day one of them moves.
 pub use control_base::plant::rotor_of_quat as rotor_from_quat;
 
+/// The same one conversion read the other way: the four numbers a rotor carries, so a caller still
+/// speaking in quaternions reads them from the crate below rather than re-deriving the signs.
+pub use control_base::plant::quat_of_rotor as quat_from_rotor;
+
+/// The algebra's own identity rotation, re-exported where the other readings of a versor live: without
+/// it every caller of a rotor-valued pose writes `mv_scalar(1.0)` for itself, and
+/// `Multivector::default` is the algebra's ZERO — a zero rotor is not a rotation.
+pub use pga::rotor_identity;
+
 pub fn rotor_from_mat(r: &Mat) -> Multivector {
     rotor_from_quat(Quat::from_mat3(r))
+}
+
+/// mat_from_rotor: `rotor_from_mat`'s inverse reading — the rotation a versor carries.
+///
+/// Why it goes through the four numbers rather than reading the matrix off the blades itself: the sign
+/// convention of a rotor IS the one `rotor_of_quat` writes down, and a second copy of it is how the two
+/// come apart. A motor is read the same way and correctly: its ideal part is the TRANSLATION and leaves
+/// the rotation alone.
+pub fn mat_from_rotor(r: &Multivector) -> Mat {
+    quat_from_rotor(*r).to_mat3()
+}
+
+/// To keep a 3 x 3 allocation out of a per-call loop, like `Quat::to_mat3_into`.
+pub fn mat_from_rotor_into(r: &Multivector, out: &mut Mat) {
+    quat_from_rotor(*r).to_mat3_into(out);
 }
 
 pub fn pga_pose_error(target: Multivector, cur: Multivector) -> Multivector {

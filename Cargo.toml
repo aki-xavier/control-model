@@ -26,6 +26,12 @@ roxmltree = "0.21.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
+# A DEV-dependency only: the comment rules, which this project's own test holds it to
+# (tests/comment_why.rs). It reads text, has no dependencies of its own, and nothing in `src/` names it,
+# so the model basis above is still the whole of what this crate links.
+[dev-dependencies]
+comment-why = { path = "../comment-why" }
+
 [lints.clippy]
 # The one default lint this crate does not follow: the numeric kernels index parallel arrays by a
 # MODEL count — `n`, `nq`, `nv`, `nbody` — not by a slice's length, so the index is the maths the loop

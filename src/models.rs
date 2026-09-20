@@ -8,7 +8,8 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// root is the `models/` directory beside this crate.
+/// The one path the rest of this file hangs off: the URDF/MJCF sources and the meshes beside this
+/// crate.
 pub fn root() -> PathBuf {
     manifest_dir().join("models")
 }
@@ -21,7 +22,8 @@ pub fn g1_dir() -> PathBuf {
     root().join("unitree_g1")
 }
 
-/// g1_robot is the converter's input.
+/// The robot MJCF the converter reads, named as the first of the two documents it takes: the scene
+/// beside it carries the keyframes, and the merge happens inside the conversion.
 pub fn g1_robot() -> PathBuf {
     g1_dir().join("src").join("g1.xml")
 }
